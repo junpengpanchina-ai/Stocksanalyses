@@ -43,6 +43,8 @@ footer{margin-top:16px;border-top:1px solid var(--border);padding-top:12px;color
 .pill-neutral{background:rgba(154,164,174,.1);color:var(--muted)}
 .bar{height:8px;background:#0b0f13;border:1px solid var(--border);border-radius:999px;overflow:hidden}
 .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--buy));width:0%}
+.confbar{height:6px;background:#0b0f13;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.confbar>span{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#22d3ee);width:0%}
 .calibrate{display:flex;gap:8px;align-items:center}
 .calibrate input{width:90px;background:#0b0f13;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px}
 .imgbox{position:relative;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#0b0f13;display:flex;align-items:center;justify-content:center;min-height:220px}
@@ -52,7 +54,13 @@ footer{margin-top:16px;border-top:1px solid var(--border);padding-top:12px;color
 .params{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin-top:8px}
 .params input{width:80px;background:#0b0f13;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px}
 .explain{color:var(--muted);font-size:12px}
+.rules{margin:4px 0 0 0;padding-left:16px;color:var(--muted);font-size:12px}
+.rules li{margin:2px 0}
+.error{background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.4);color:#ffb4b4;padding:8px;border-radius:8px;font-size:12px}
+.empty{color:var(--muted);font-size:12px}
 .guide{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgba(255,255,255,.3)}
 .guide-label{position:absolute;right:8px;top:-10px;background:rgba(0,0,0,.5);color:#fff;border-radius:4px;padding:2px 6px;font-size:11px}
 .ocr-badge{margin-left:6px}
+.overlay-ctrls{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px;flex-wrap:wrap}
+.overlay-ctrls input{width:80px;background:#0b0f13;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px}
 

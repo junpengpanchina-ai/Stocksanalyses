@@ -29,8 +29,20 @@ public class UploadController {
                                        @RequestParam(value = "macdFast", required = false) Integer macdFast,
                                        @RequestParam(value = "macdSlow", required = false) Integer macdSlow,
                                        @RequestParam(value = "macdSignal", required = false) Integer macdSignal) {
+        validateFile(file);
         return uploadAnalyzeService.analyze(file, hintStyle, calibX1, calibY1, calibPrice1, calibX2, calibY2, calibPrice2,
                 emaShort, emaLong, macdFast, macdSlow, macdSignal);
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("file empty");
+        String ct = file.getContentType();
+        if (ct == null || !(ct.equals("image/png") || ct.equals("image/jpeg") || ct.equals("image/webp"))) {
+            throw new IllegalArgumentException("unsupported content-type");
+        }
+        if (file.getSize() > 5 * 1024 * 1024) {
+            throw new IllegalArgumentException("file too large");
+        }
     }
 }
 

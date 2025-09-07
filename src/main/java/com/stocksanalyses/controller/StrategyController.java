@@ -2,6 +2,9 @@ package com.stocksanalyses.controller;
 
 import com.stocksanalyses.model.Candle;
 import com.stocksanalyses.model.StrategyConfig;
+import com.stocksanalyses.model.BacktestRequest;
+import com.stocksanalyses.model.BacktestResult;
+import com.stocksanalyses.service.backtest.BacktestEngine;
 import com.stocksanalyses.service.BacktestService;
 import com.stocksanalyses.service.CandleService;
 import org.springframework.web.bind.annotation.*;
@@ -15,18 +18,17 @@ import java.util.Map;
 public class StrategyController {
     private final BacktestService backtestService;
     private final CandleService candleService;
+    private final BacktestEngine backtestEngine;
 
-    public StrategyController(BacktestService backtestService, CandleService candleService) {
+    public StrategyController(BacktestService backtestService, CandleService candleService, BacktestEngine backtestEngine) {
         this.backtestService = backtestService;
         this.candleService = candleService;
+        this.backtestEngine = backtestEngine;
     }
 
     @PostMapping("/backtest")
-    public Map<String, Object> backtest(@RequestParam String symbol, @RequestBody StrategyConfig config) {
-        Instant start = Instant.now().minusSeconds(86400L * 120);
-        Instant end = Instant.now();
-        List<Candle> candles = candleService.getCandles(symbol, "1d", start, end);
-        return backtestService.runBacktest(symbol, candles, config);
+    public BacktestResult backtest(@RequestBody BacktestRequest req) {
+        return backtestEngine.run(req);
     }
 }
 

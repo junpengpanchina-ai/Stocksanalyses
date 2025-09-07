@@ -12,6 +12,7 @@ public class UploadAnalyzeResult {
     private List<Map<String, Object>> ohlc;
     private List<Signal> signals;
     private Map<String, Object> overlays;
+    private Map<String, Object> meta;
 
     public String getImageId() { return imageId; }
     public void setImageId(String imageId) { this.imageId = imageId; }
@@ -29,6 +30,8 @@ public class UploadAnalyzeResult {
     public void setSignals(List<Signal> signals) { this.signals = signals; }
     public Map<String, Object> getOverlays() { return overlays; }
     public void setOverlays(Map<String, Object> overlays) { this.overlays = overlays; }
+    public Map<String, Object> getMeta() { return meta; }
+    public void setMeta(Map<String, Object> meta) { this.meta = meta; }
 }
 
 
