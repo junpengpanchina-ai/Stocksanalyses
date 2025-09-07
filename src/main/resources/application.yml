@@ -1,0 +1,18 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: kline-analytics
+  jackson:
+    serialization:
+      WRITE_DATES_AS_TIMESTAMPS: false
+    default-property-inclusion: non_null
+logging:
+  level:
+    root: INFO
+    com.stocksanalyses: INFO
+ocr:
+  enabled: true
+  tessdataPath: 
+  language: eng
+
