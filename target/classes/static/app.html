@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KLine App</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    #chart{height:520px;border:1px solid var(--border);border-radius:8px}
+    .panel{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+    .kv{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .kv input{width:100px;background:#0b0f13;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px}
+    .skeleton{height:12px;background:linear-gradient(90deg,#0b0f13,#10151b,#0b0f13);border-radius:4px;animation:sh 1.2s infinite}
+    @keyframes sh{0%{background-position:-200px 0}100%{background-position:200px 0}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand"><div class="dot"></div><h1>KLine Analytics</h1></div>
+      <div class="toolbar">
+        <a class="btn" href="/upload.html">Upload</a>
+        <a class="btn" href="/baseline.html">Baseline</a>
+        <a class="btn" href="/swagger-ui/index.html">API</a>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="card">
+        <h3>Chart</h3>
+        <div class="content">
+          <div class="kv" style="justify-content:space-between">
+            <div class="kv">
+              <input id="symbol" placeholder="SYMBOL e.g. TEST" />
+              <select id="interval"><option value="1d">1d</option><option value="1h">1h</option></select>
+              <button class="primary" id="load">Load</button>
+            </div>
+            <div class="kv">
+              <input id="emaShort" placeholder="emaShort 20" />
+              <input id="emaLong" placeholder="emaLong 50" />
+              <input id="macdFast" placeholder="macdFast 12" />
+              <input id="macdSlow" placeholder="macdSlow 26" />
+              <input id="macdSignal" placeholder="macdSignal 9" />
+              <button class="btn" id="apply">Apply</button>
+              <input type="file" id="overlayImg" accept="image/*" />
+              <button class="btn" id="overlayBtn">Overlay</button>
+              <label style="color:var(--muted)"><input id="overlayToggle" type="checkbox" checked /> overlay on</label>
+            </div>
+          </div>
+          <div id="chart"></div>
+          <div class="legend" style="margin-top:8px">
+            <span class="badge"><span class="k k-buy"></span> BUY</span>
+            <span class="badge"><span class="k k-sell"></span> SELL</span>
+            <span class="badge">overlay: reconstructed candles</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Backtest</h3>
+        <div class="content">
+          <div class="kv"><button class="primary" id="runbt">Run Backtest</button></div>
+          <div id="btout" class="mono" style="margin-top:8px;max-height:420px;overflow:auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>Strategies</h3>
+      <div class="content" id="strats">
+        <div class="skeleton" style="width:100%"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>Signal Inbox</h3>
+      <div class="content" id="inbox">
+        <div class="skeleton" style="width:100%"></div>
+      </div>
+    </div>
+
+    <footer>Theme: Terminal Pro · © KLine Analytics</footer>
+  </div>
+
+  <script>
+    const chart = echarts.init(document.getElementById('chart'));
+    const state = { symbol:'TEST', interval:'1d', candles:[], signals:[], overlayPrices:[], overlayCandles:[] };
+    document.getElementById('symbol').value = state.symbol;
+    document.getElementById('interval').value = state.interval;
+
+    async function fetchWithRetry(url, init={}, retries=2, backoff=300){
+      try { const r = await fetch(url, init); if (!r.ok) throw new Error('HTTP '+r.status); return r; }
+      catch(e){ if (retries<=0) throw e; await new Promise(rs=>setTimeout(rs, backoff)); return fetchWithRetry(url, init, retries-1, backoff*2); }
+    }
+    async function fetchCandles(){
+      const url = `/api/candles?symbol=${encodeURIComponent(state.symbol)}&interval=${state.interval}`;
+      const res = await fetchWithRetry(url); const arr = await res.json();
+      state.candles = arr;
+    }
+    async function fetchSignals(){
+      const params = new URLSearchParams({ symbol: state.symbol });
+      const opt = (id)=>{ const v=document.getElementById(id).value; return v?[[id,v]]:[] };
+      ;['emaShort','emaLong','macdFast','macdSlow','macdSignal'].forEach(id=>{ const v=document.getElementById(id).value; if(v) params.append(id, v) });
+      const res = await fetchWithRetry(`/api/signals?${params.toString()}`);
+      state.signals = await res.json();
+    }
+    function renderChart(){
+      const k = state.candles.map(c=>[new Date(c.timestamp).toISOString().slice(0,10), +c.open, +c.close, +c.low, +c.high]);
+      const sigPts = state.signals.map(s=>({ name: s.type, value:[new Date(s.timestamp).toISOString().slice(0,10), s.type==='BUY'?1:-1], itemStyle:{color:s.type==='BUY'?getComputedStyle(document.documentElement).getPropertyValue('--buy'):getComputedStyle(document.documentElement).getPropertyValue('--sell')}}));
+      const option = {
+        animation: false,
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: k.map(v=>v[0]) },
+        yAxis: { scale:true },
+        grid: { left: 40, right: 20, top: 20, bottom: 40 },
+        series: [
+          { type:'candlestick', name: state.symbol, data: k.map(v=>v.slice(1)) },
+          { type:'scatter', name:'signals', data: sigPts, yAxisIndex:0 }
+        ]
+      };
+      const overlayOn = document.getElementById('overlayToggle').checked;
+      if (overlayOn && state.overlayPrices.length){
+        option.series.push({ type:'line', name:'overlay', data: k.map((v,i)=>[v[0], state.overlayPrices[i] ?? null]),
+          smooth:true, showSymbol:false, lineStyle:{width:1, opacity:0.8} });
+      }
+      if (overlayOn && state.overlayCandles.length){
+        // Build data: [catIndex, open, close, low, high]
+        const ovData = [];
+        for (let i=0;i<state.overlayCandles.length;i++){
+          const oc = state.overlayCandles[i];
+          if (!oc) continue;
+          ovData.push([i, oc.open, oc.close, oc.low, oc.high]);
+        }
+        const upColor = getComputedStyle(document.documentElement).getPropertyValue('--buy').trim();
+        const downColor = getComputedStyle(document.documentElement).getPropertyValue('--sell').trim();
+        option.series.push({
+          name:'overlay-candles', type:'custom', renderItem: function(params, api){
+            const xIndex = api.value(0);
+            const open = api.value(1), close = api.value(2), low = api.value(3), high = api.value(4);
+            const x = api.coord([xIndex, open])[0];
+            const openPoint = api.coord([xIndex, open]);
+            const closePoint = api.coord([xIndex, close]);
+            const lowPoint = api.coord([xIndex, low]);
+            const highPoint = api.coord([xIndex, high]);
+            const barWidth = 6; // pixels
+            const style = api.style({
+              stroke: 'rgba(255,255,255,0.0)',
+              fill: (close>=open? upColor: downColor),
+              opacity: 0.25
+            });
+            return {
+              type: 'group',
+              children: [
+                { // wick
+                  type: 'line', shape: { x1: x, y1: highPoint[1], x2: x, y2: lowPoint[1] }, style: { stroke: style.fill, lineWidth: 1, opacity: 0.5 }
+                },
+                { // body
+                  type: 'rect', shape: {
+                    x: x - barWidth/2,
+                    y: Math.min(openPoint[1], closePoint[1]),
+                    width: barWidth,
+                    height: Math.max(1, Math.abs(closePoint[1] - openPoint[1]))
+                  }, style: style
+                }
+              ]
+            };
+          },
+          data: ovData,
+          encode: { x: 0, y: [2,3,4] },
+          silent: true
+        });
+      }
+      chart.setOption(option);
+    }
+    async function loadAll(){
+      const inbox = document.getElementById('inbox'); inbox.innerHTML = '<div class="skeleton" style="width:100%"></div>';
+      await fetchCandles(); await fetchSignals(); renderChart(); renderInbox();
+    }
+    function renderInbox(){
+      const box = document.getElementById('inbox');
+      if (!state.signals.length){ box.innerHTML = '<div class="empty">No signals</div>'; return; }
+      box.innerHTML = state.signals.map(s=>`<div class="badge" style="margin:6px 6px 0 0">${s.type} · ${s.strength?.toFixed? s.strength.toFixed(2):s.strength}</div>`).join('');
+    }
+
+    // localStorage persist/load
+    const paramKeys = ['symbol','interval','emaShort','emaLong','macdFast','macdSlow','macdSignal'];
+    function loadParams(){
+      paramKeys.forEach(k=>{ const v=localStorage.getItem('kline_'+k); if (v) { const el=document.getElementById(k); if (el) el.value=v; }});
+      state.symbol = document.getElementById('symbol').value || state.symbol;
+      state.interval = document.getElementById('interval').value || state.interval;
+    }
+    function saveParams(){ paramKeys.forEach(k=>{ const el=document.getElementById(k); if (el && el.value) localStorage.setItem('kline_'+k, el.value); }); }
+
+    document.getElementById('load').onclick = async ()=>{
+      state.symbol = document.getElementById('symbol').value || 'TEST';
+      state.interval = document.getElementById('interval').value || '1d';
+      saveParams();
+      await loadAll();
+    };
+    document.getElementById('apply').onclick = async ()=>{ saveParams(); await loadAll(); };
+    document.getElementById('runbt').onclick = async ()=>{
+      const body = { strategyConfig: { name:'dsl', params: {
+        emaShort: +document.getElementById('emaShort').value || 20,
+        emaLong: +document.getElementById('emaLong').value || 50,
+        macdFast: +document.getElementById('macdFast').value || 12,
+        macdSlow: +document.getElementById('macdSlow').value || 26,
+        macdSignal: +document.getElementById('macdSignal').value || 9
+      } }, universe:[state.symbol], interval: state.interval, start: null, end: null, costModel:{bps:5}, slippageModel:{bps:5} };
+      const res = await fetch('/api/strategy/backtest', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const json = await res.json();
+      document.getElementById('btout').textContent = JSON.stringify(json.metrics || json, null, 2);
+    };
+
+    // Overlay from upload: map pixel y to price: price = refPrice + (refY - y) * pricePerPx
+    document.getElementById('overlayBtn').onclick = async ()=>{
+      const file = document.getElementById('overlayImg').files?.[0];
+      if(!file){ alert('Choose an image'); return; }
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch('/api/upload/analyze', { method:'POST', body: fd });
+      const j = await res.json();
+      const yinfo = j.axes?.y; const series = j.overlays?.series || [];
+      if (!yinfo || typeof yinfo.pricePerPx !== 'number' || !yinfo.ref){ alert('No axis mapping from image'); return; }
+      const refY = yinfo.ref.y; const refPrice = yinfo.ref.price; const ppx = yinfo.pricePerPx;
+      // Align last N candles with overlay series idx 0..N-1 (0=most recent in our service)
+      const N = Math.min(series.length, state.candles.length);
+      const prices = new Array(state.candles.length).fill(null);
+      const ocArr = new Array(state.candles.length).fill(null);
+      for (let i=0;i<N;i++){
+        const pt = series[i];
+        if (typeof pt?.yClose === 'number'){
+          const price = refPrice + (refY - pt.yClose) * ppx;
+          prices[prices.length-1 - i] = +price.toFixed(6);
+        }
+        if (pt && [pt.yOpen,pt.yHigh,pt.yLow,pt.yClose].every(v=>typeof v==='number')){
+          const map = y=> refPrice + (refY - y) * ppx;
+          ocArr[ocArr.length-1 - i] = {
+            open: +map(pt.yOpen).toFixed(6),
+            high: +map(pt.yHigh).toFixed(6),
+            low: +map(pt.yLow).toFixed(6),
+            close: +map(pt.yClose).toFixed(6)
+          };
+        }
+      }
+      state.overlayPrices = prices;
+      state.overlayCandles = ocArr;
+      renderChart();
+    };
+
+    loadParams();
+    loadAll();
+    window.addEventListener('resize', ()=> chart.resize());
+
+    // Strategies panel
+    async function loadStrats(){
+      try {
+        const res = await fetchWithRetry('/api/strategies/latest');
+        const json = await res.json();
+        const el = document.getElementById('strats');
+        el.innerHTML = Object.entries(json).map(([k,v])=>`<div class="badge" style="margin:6px 6px 0 0">${k}: ${v}</div>`).join('') || '<div class="empty">No strategies</div>';
+      } catch(e){ document.getElementById('strats').innerHTML = '<div class="error">Failed to load strategies. Retry later.</div>'; }
+    }
+    loadStrats();
+  </script>
+</body>
+</html>
+
+
