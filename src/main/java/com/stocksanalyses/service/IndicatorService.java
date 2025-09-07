@@ -23,11 +23,11 @@ public class IndicatorService {
             Bar bar = new BaseBar(
                     java.time.Duration.ofDays(1),
                     zdt,
-                    c.getOpen().doubleValue(),
-                    c.getHigh().doubleValue(),
-                    c.getLow().doubleValue(),
-                    c.getClose().doubleValue(),
-                    (double) c.getVolume()
+                    c.getOpen().toPlainString(),
+                    c.getHigh().toPlainString(),
+                    c.getLow().toPlainString(),
+                    c.getClose().toPlainString(),
+                    Long.toString(c.getVolume())
             );
             series.addBar(bar);
         }

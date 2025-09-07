@@ -10,6 +10,7 @@ public class Signal {
     private Type type;
     private double strength;
     private String explanation;
+    private java.util.List<String> rulesFired;
 
     public Signal() {}
 
@@ -31,6 +32,8 @@ public class Signal {
     public void setStrength(double strength) { this.strength = strength; }
     public String getExplanation() { return explanation; }
     public void setExplanation(String explanation) { this.explanation = explanation; }
+    public java.util.List<String> getRulesFired() { return rulesFired; }
+    public void setRulesFired(java.util.List<String> rulesFired) { this.rulesFired = rulesFired; }
 }
 
 

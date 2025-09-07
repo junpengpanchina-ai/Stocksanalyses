@@ -40,6 +40,8 @@
             </div>
             <div class="bar"><span id="sigBar"></span></div>
             <div class="legend">Strength, explanation appears below.</div>
+            <div class="confbar"><span id="confBar"></span></div>
+            <div class="empty" id="emptyHint">Upload an image and click Analyze to see results.</div>
           </div>
           <pre class="mono" id="out">{ /* Result will appear here */ }</pre>
         </div>
@@ -86,10 +88,17 @@
       addIf('emaShort','emaShort'); addIf('emaLong','emaLong');
       addIf('macdFast','macdFast'); addIf('macdSlow','macdSlow'); addIf('macdSignal','macdSignal');
       const res = await fetch('/api/upload/analyze', { method: 'POST', body: fd });
-      const json = await res.json();
+      let json;
+      try {
+        json = await res.json();
+      } catch (e) {
+        document.getElementById('signalCard').appendChild(Object.assign(document.createElement('div'),{className:'error',textContent:'Response is not JSON.'}));
+        return;
+      }
       out.textContent = JSON.stringify(json, null, 2);
       // Update signal card
       const signals = json.signals || [];
+      document.getElementById('emptyHint').style.display = signals.length? 'none':'block';
       if (signals.length) {
         const s = signals[0];
         document.getElementById('sigLabel').textContent = `${s.type} · ${s.strength?.toFixed ? s.strength.toFixed(2) : s.strength}`;
@@ -98,15 +107,39 @@
         pill.textContent = s.type;
         const width = Math.min(100, Math.max(5, (s.strength || 0) * 10));
         document.getElementById('sigBar').style.width = width + '%';
+        // confidence bar
+        const conf = Math.max(0, Math.min(1, json.confidence ?? 0));
+        document.getElementById('confBar').style.width = (conf*100).toFixed(0) + '%';
         // explanation
         const explainEl = document.createElement('div'); explainEl.className = 'explain'; explainEl.textContent = s.explanation || '';
         document.getElementById('signalCard').appendChild(explainEl);
+        // rule points from backend
+        const rules = Array.isArray(s.rulesFired) ? s.rulesFired : [];
+        if (rules.length){
+          const ul = document.createElement('ul'); ul.className='rules';
+          rules.forEach(r=>{ const li=document.createElement('li'); li.textContent=r; ul.appendChild(li); });
+          document.getElementById('signalCard').appendChild(ul);
+        }
+        // low confidence / calibration hint
+        const guidesCount = (json.overlays && Array.isArray(json.overlays.guides)) ? json.overlays.guides.length : 0;
+        const hasPriceMap = json.axes && json.axes.y && typeof json.axes.y.pricePerPx === 'number';
+        if ((json.confidence ?? 0) < 0.6 || !hasPriceMap || guidesCount === 0) {
+          const warn = document.createElement('div');
+          warn.className = 'error';
+          warn.textContent = '置信度较低或未完成标尺推断：请在图上点选两点标尺，或上传更清晰的图片。';
+          document.getElementById('signalCard').appendChild(warn);
+        }
       }
-      // Draw overlays guides
+      // Draw overlays guides and series
       const imgbox = document.getElementById('imgbox');
       // remove old guides
-      imgbox.querySelectorAll('.guide,.guide-label').forEach(el=>el.remove());
+      imgbox.querySelectorAll('.guide,.guide-label,.bar-rect').forEach(el=>el.remove());
       const overlays = json.overlays || {};
+      // adaptive xSpacing by image width and window size
+      const winSize = parseInt(document.getElementById('winSize')?.value || '50', 10);
+      const winOffset = parseInt(document.getElementById('winOffset')?.value || '0', 10);
+      const toggle = document.getElementById('toggleOverlay')?.checked !== false;
+      if(!toggle){ return; }
       const guides = overlays.guides || [];
       guides.forEach(g=>{
         if(g.type==='hline' && typeof g.y === 'number'){
@@ -116,6 +149,52 @@
           label.style.top = (g.y-10)+'px';
         }
       });
+      let series = overlays.series || [];
+      // windowing
+      series = series.slice(winOffset, winOffset + winSize);
+      let xSpacing = overlays.xSpacing || 6;
+      const rightMargin = overlays.rightMargin || 20;
+      const imgRect = imgbox.getBoundingClientRect();
+      // compute spacing to fit window
+      if (series.length > 1) {
+        const usable = Math.max(60, imgRect.width - rightMargin - 20);
+        xSpacing = Math.max(4, Math.min(20, Math.floor(usable / series.length)));
+      }
+      // window drag/zoom state
+      let wsize = series.length;
+      let woffset = parseInt(document.getElementById('winOffset')?.value || '0', 10);
+      series.forEach(pt=>{
+        const idx = pt.idx; const yOpen = pt.yOpen; const yClose = pt.yClose; const yHigh = pt.yHigh; const yLow = pt.yLow;
+        if([yOpen,yClose,yHigh,yLow].some(v=>typeof v !== 'number')) return;
+        const x = imgRect.width - rightMargin - (series[0].idx - idx + series.length - 1) * xSpacing;
+        const w = Math.max(2, xSpacing*0.6);
+        const top = Math.min(yOpen,yClose); const bottom = Math.max(yOpen,yClose);
+        const rect = document.createElement('div'); rect.className='bar-rect';
+        rect.style.position='absolute'; rect.style.left=(x-w/2)+'px'; rect.style.width=w+'px'; rect.style.top=top+'px'; rect.style.height=(bottom-top||1)+'px';
+        rect.style.background = (yClose < yOpen) ? 'var(--sell)' : 'var(--buy)'; rect.style.opacity='0.2';
+        imgbox.appendChild(rect);
+      });
+      // show window range in JSON panel footer
+      const meta = { window: { size: wsize, offset: woffset } };
+      out.textContent = JSON.stringify({ ...json, _clientMeta: meta }, null, 2);
+
+      // interactions: drag to move, wheel to zoom
+      let dragging = false; let startX = 0; let startOffset = woffset;
+      imgbox.onmousedown = (e)=>{ dragging=true; startX=e.clientX; startOffset=parseInt(document.getElementById('winOffset').value||'0',10); };
+      window.onmouseup = ()=> dragging=false;
+      window.onmousemove = (e)=>{
+        if(!dragging) return;
+        const dx = e.clientX - startX;
+        const deltaBars = Math.round(-dx / xSpacing);
+        const newOffset = Math.max(0, startOffset + deltaBars);
+        document.getElementById('winOffset').value = String(newOffset);
+      };
+      imgbox.onwheel = (e)=>{
+        e.preventDefault();
+        const cur = parseInt(document.getElementById('winSize').value||'50',10);
+        const next = Math.max(10, Math.min(200, cur + (e.deltaY>0?5:-5)));
+        document.getElementById('winSize').value = String(next);
+      };
       if (json.pipeline && String(json.pipeline).includes('OCR')){
         const badge = document.createElement('span'); badge.className='pill pill-neutral ocr-badge'; badge.textContent='OCR inferred';
         document.querySelector('.inputs').appendChild(badge);
@@ -142,6 +221,11 @@
         <input id=\"macdFast\" placeholder=\"macdFast 12\" />
         <input id=\"macdSlow\" placeholder=\"macdSlow 26\" />
         <input id=\"macdSignal\" placeholder=\"macdSignal 9\" />
+      </div>
+      <div class=\"overlay-ctrls\">
+        <label style=\"color:var(--muted)\"><input id=\"toggleOverlay\" type=\"checkbox\" checked /> overlay</label>
+        <input id=\"winSize\" placeholder=\"win size 50\" />
+        <input id=\"winOffset\" placeholder=\"win offset 0\" />
       </div>`;
     document.querySelectorAll('.card .content')[0].appendChild(calibBlock);
 
