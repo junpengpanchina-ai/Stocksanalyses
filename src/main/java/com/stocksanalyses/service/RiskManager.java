@@ -3,7 +3,6 @@ package com.stocksanalyses.service;
 import com.stocksanalyses.model.Candle;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Service

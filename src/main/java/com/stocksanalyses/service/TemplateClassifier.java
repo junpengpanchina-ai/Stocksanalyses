@@ -9,7 +9,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
 
 @Service
 public class TemplateClassifier {
@@ -18,6 +17,22 @@ public class TemplateClassifier {
         public final Style style;
         public final String version;
         public Signature(Style style, String version){ this.style=style; this.version=version; }
+    }
+
+    public AxisDetectionService.Prior getAxisPrior(Signature sig){
+        AxisDetectionService.Prior p = new AxisDetectionService.Prior();
+        if (sig == null || sig.style == null) return p;
+        switch (sig.style){
+            case TRADINGVIEW:
+                p.axisOnRight = true; p.axisWidthFrac = 0.12; break;
+            case WIND:
+                p.axisOnRight = true; p.axisWidthFrac = 0.14; break;
+            case BROKER:
+                p.axisOnRight = true; p.axisWidthFrac = 0.18; break;
+            default:
+                p.axisOnRight = true; p.axisWidthFrac = 0.12;
+        }
+        return p;
     }
 
     private final String tessdataPath;

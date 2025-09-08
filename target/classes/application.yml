@@ -11,6 +11,20 @@ spring:
     multipart:
       max-file-size: 5MB
       max-request-size: 6MB
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        envers:
+          audit_table_suffix: _aud
+          store_data_at_delete: true
 logging:
   level:
     root: INFO
@@ -34,4 +48,46 @@ ocr:
   enabled: true
   tessdataPath: 
   language: eng
+# JWT Configuration
+jwt:
+  secret: mySecretKey123456789012345678901234567890
+  expiration: 86400000 # 24 hours
+# Rate Limiting Configuration
+rate-limit:
+  default-requests-per-minute: 100
+  default-requests-per-hour: 1000
+# Privacy Configuration
+privacy:
+  anonymize-data: false
+  persist-images: true
+  data-retention-days: 30
+# Segmentation Configuration
+seg:
+  endpoint: http://localhost:8088/predict
+  timeoutMs: 4000
+  enabled: true
+  forceSegmentation: false  # if true, skip geometry fallback
+  forceGeometry: false      # if true, skip segmentation
+  # Model-specific settings
+  model:
+    type: yolov8-seg  # yolov8-seg, mask-rcnn, sam2
+    confidenceThreshold: 0.5
+    nmsThreshold: 0.4
+    maxInstances: 100
+  # Fusion parameters
+  fusion:
+    pixelsPerBar: 6.0
+    maxCandles: 50
+    wickProximityFactor: 0.6  # multiplier for pixelsPerBar to find nearby wicks
+    minCandleHeight: 3.0      # minimum pixel height for valid candle
+    minWickLength: 2.0        # minimum pixel length for valid wick
+  # Class mapping (adjust based on your model's output classes)
+  classes:
+    candle: ["candle", "body", "candlestick"]
+    wick: ["wick", "shadow", "line"]
+  # Quality thresholds
+  quality:
+    minScore: 0.3             # minimum confidence score for instances
+    minPolygonPoints: 4       # minimum points in mask polygon
+    maxPolygonPoints: 1000    # maximum points in mask polygon
 

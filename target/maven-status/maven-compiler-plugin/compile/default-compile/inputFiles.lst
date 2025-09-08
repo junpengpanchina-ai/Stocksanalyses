@@ -1,6 +1,7 @@
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/UploadAnalyzeService.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/MetricsService.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/controller/MetricsController.java
+/Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/controller/AlertsController.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/controller/TemplatesController.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/PositionSizer.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/StrategyRegistry.java
@@ -16,8 +17,10 @@
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/controller/StrategiesController.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/model/BacktestRequest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/controller/StrategyController.java
+/Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/realtime/RealtimeServices.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/web/GlobalExceptionHandler.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/model/UploadAnalyzeResult.java
+/Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/model/AlertModels.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/model/Signal.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/service/TemplateClassifier.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/main/java/com/stocksanalyses/web/RequestIdFilter.java

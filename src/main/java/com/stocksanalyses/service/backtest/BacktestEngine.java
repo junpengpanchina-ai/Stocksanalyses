@@ -29,7 +29,7 @@ public class BacktestEngine {
         CostModel cm = notional -> notional * (((Number) req.costModel.getOrDefault("bps", 0)).doubleValue()/10000.0);
         SlippageModel sm = price -> price * (((Number) req.slippageModel.getOrDefault("bps", 0)).doubleValue()/10000.0);
 
-        double cash = req.initialCapital; double pos = 0; double avgPrice = 0;
+        double cash = req.initialCapital; double pos = 0;
         List<Map<String,Object>> trades = new ArrayList<>();
         List<Double> equity = new ArrayList<>();
 
@@ -48,7 +48,7 @@ public class BacktestEngine {
                         double notional = qty * px;
                         double fee = cm.cost(notional);
                         cash -= (notional + fee);
-                        pos += qty; avgPrice = px;
+                        pos += qty;
                         trades.add(Map.of("ts", last.getTimestamp().toString(), "side","BUY", "qty", qty, "price", px, "fee", fee));
                     }
                 } else if (s.getType()== Signal.Type.SELL && pos>0){
@@ -57,7 +57,7 @@ public class BacktestEngine {
                     double fee = cm.cost(notional);
                     cash += (notional - fee);
                     trades.add(Map.of("ts", last.getTimestamp().toString(), "side","SELL", "qty", pos, "price", px, "fee", fee));
-                    pos = 0; avgPrice = 0;
+                    pos = 0;
                 }
             }
             double markEquity = cash + pos * mkt;

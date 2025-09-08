@@ -8,7 +8,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -24,13 +23,16 @@ public class AxisDetectionService {
         this.language = language;
     }
 
-    public Optional<Result> detectYAxis(MultipartFile file) {
+    public Optional<Result> detectYAxis(MultipartFile file) { return detectYAxis(file, new Prior()); }
+
+    public Optional<Result> detectYAxis(MultipartFile file, Prior prior) {
         try {
             BufferedImage img = ImageIO.read(file.getInputStream());
             if (img == null) return Optional.empty();
-            // Heuristic: Y-axis likely on rightmost 12% region
-            int axW = Math.max(40, (int)(img.getWidth() * 0.12));
-            int x0 = img.getWidth() - axW;
+            // Heuristic with prior: Y-axis likely on right or left with configured width fraction
+            double frac = (prior.axisWidthFrac<=0 || prior.axisWidthFrac>0.4) ? 0.12 : prior.axisWidthFrac;
+            int axW = Math.max(40, (int)(img.getWidth() * frac));
+            int x0 = prior.axisOnRight ? img.getWidth() - axW : 0;
             BufferedImage axis = img.getSubimage(Math.max(0,x0), 0, axW, img.getHeight());
 
             // OCR numbers in axis region
@@ -46,21 +48,56 @@ public class AxisDetectionService {
 
             // Map back to original coordinates
             for (PointY p : points) p.y = p.y; // already local; y only
-            // RANSAC-like robust slope from pairs
+            // Weighted RANSAC-like robust slope from random pairs with inlier re-fit
             double bestErr = Double.MAX_VALUE; double bestSlope = 0; double bestIntercept = 0;
-            for (int i=0;i<points.size();i++){
-                for(int j=i+1;j<points.size();j++){
-                    PointY a = points.get(i), b = points.get(j);
-                    if (Math.abs(a.y - b.y) < 1e-6) continue;
-                    double slope = (b.price - a.price) / (a.y - b.y); // pricePerPx (downward y)
-                    double intercept = a.price - slope * (axis.getHeight() - a.y); // using image-bottom ref frame
-                    double err = 0;
-                    for (PointY q: points){
-                        double pred = intercept + slope * (axis.getHeight() - q.y);
-                        err += Math.abs(pred - q.price);
+            java.util.Random rnd = new java.util.Random(42);
+            int H = axis.getHeight();
+            int iterations = Math.min(200, points.size() * points.size());
+            for (int it = 0; it < iterations; it++){
+                int i = rnd.nextInt(points.size());
+                int j = rnd.nextInt(points.size());
+                if (i==j) continue;
+                PointY a = points.get(Math.min(i,j)), b = points.get(Math.max(i,j));
+                if (Math.abs(a.y - b.y) < 1e-6) continue;
+                double slope = (b.price - a.price) / (a.y - b.y); // pricePerPx (downward y)
+                double intercept = a.price - slope * (H - a.y); // using image-bottom ref frame
+
+                // Compute weighted residuals and select inliers
+                java.util.List<PointY> inliers = new java.util.ArrayList<>();
+                double thresh = Math.max(1e-3, 0.01 * Math.abs(b.price - a.price));
+                for (PointY q : points){
+                    double pred = intercept + slope * (H - q.y);
+                    double r = Math.abs(pred - q.price);
+                    if (r <= thresh * (1.0 + 1.0/(q.w+1e-6))) { // looser for low-weight points
+                        inliers.add(q);
                     }
-                    if (err < bestErr){ bestErr=err; bestSlope=slope; bestIntercept=intercept; }
                 }
+                if (inliers.size() < 2) continue;
+
+                // Refit with weighted least squares on inliers in (X = (H - y), Y = price)
+                double Sw=0, Sx=0, Sy=0, Sxx=0, Sxy=0;
+                for (PointY q : inliers){
+                    double w = Math.max(1e-3, q.w);
+                    double x = H - q.y;
+                    double y = q.price;
+                    Sw += w;
+                    Sx += w * x;
+                    Sy += w * y;
+                    Sxx += w * x * x;
+                    Sxy += w * x * y;
+                }
+                double denom = (Sw * Sxx - Sx * Sx);
+                if (Math.abs(denom) < 1e-9) continue;
+                double wslope = (Sw * Sxy - Sx * Sy) / denom;
+                double wintercept = (Sy - wslope * Sx) / Sw;
+
+                // Evaluate weighted absolute error on all points
+                double err = 0;
+                for (PointY q: points){
+                    double pred = wintercept + wslope * (H - q.y);
+                    err += Math.abs(pred - q.price) * (1.0 / Math.max(1e-3, q.w));
+                }
+                if (err < bestErr){ bestErr=err; bestSlope=wslope; bestIntercept=wintercept; }
             }
 
             Result res = new Result();
@@ -98,19 +135,56 @@ public class AxisDetectionService {
         // Sort numbers ascending and lines ascending (top->down)
         nums.sort(Double::compareTo);
         lineCenters.sort(Integer::compareTo);
-        // If counts mismatch, sample evenly from detected lines
-        if (lineCenters.size() > nums.size()) {
-            int need = nums.size();
-            List<Integer> reduced = new ArrayList<>();
-            for (int i=0;i<need;i++){
-                int idx = (int)Math.round(i * (lineCenters.size()-1) / (double)(need-1==0?1:need-1));
-                reduced.add(lineCenters.get(idx));
+
+        // Try to align numbers to lines robustly: dynamic-programming match with monotonicity
+        // cost = abs(predicted vertical spacing ratio - observed) + small for index gap
+        // For simplicity, use greedy with local spacing consistency and energy-based weights
+        double[] energy = computeRowEnergy(axis);
+        // DP-based monotonic alignment between sorted nums and line centers
+        int n = nums.size();
+        int m = lineCenters.size();
+        if (n==0 || m==0) return java.util.Collections.emptyList();
+        double[][] dp = new double[n+1][m+1];
+        int[][] from = new int[n+1][m+1];
+        for (int i=0;i<=n;i++) for (int j=0;j<=m;j++){ dp[i][j] = 1e18; from[i][j]=0; }
+        dp[0][0] = 0;
+        for (int i=0;i<=n;i++){
+            for (int j=0;j<=m;j++){
+                if (i<n && j<m){
+                    int y = lineCenters.get(j);
+                    double w = (y>=0 && y<energy.length) ? (0.5 + energy[y]) : 0.5;
+                    double cost = 1.0 / w; // prefer higher-energy lines
+                    if (dp[i][j] + cost < dp[i+1][j+1]){
+                        dp[i+1][j+1] = dp[i][j] + cost; from[i+1][j+1] = 3; // diag match
+                    }
+                }
+                if (j<m && dp[i][j] + 0.8 < dp[i][j+1]){ // skip a line (penalize lightly)
+                    dp[i][j+1] = dp[i][j] + 0.8; from[i][j+1] = 2;
+                }
+                if (i<n && dp[i][j] + 1.2 < dp[i+1][j]){ // skip a number (penalize more)
+                    dp[i+1][j] = dp[i][j] + 1.2; from[i+1][j] = 1;
+                }
             }
-            lineCenters = reduced;
         }
-        int m = Math.min(nums.size(), lineCenters.size());
+        // backtrack
+        int i=n, j=m;
+        java.util.List<int[]> pairs = new java.util.ArrayList<>();
+        while (i>0 && j>0){
+            int f = from[i][j];
+            if (f==3){ pairs.add(new int[]{i-1, j-1}); i--; j--; }
+            else if (f==2){ j--; }
+            else { i--; }
+        }
+        java.util.Collections.reverse(pairs);
         List<PointY> pts = new ArrayList<>();
-        for (int i=0;i<m;i++) pts.add(new PointY(lineCenters.get(i), nums.get(i)));
+        for (int[] pr : pairs){
+            int idxNum = pr[0], idxLine = pr[1];
+            int y = lineCenters.get(idxLine);
+            double w = (y>=0 && y<energy.length) ? (0.5 + energy[y]) : 0.5;
+            PointY p = new PointY(y, nums.get(idxNum));
+            p.w = w;
+            pts.add(p);
+        }
         return pts;
     }
 
@@ -189,7 +263,6 @@ public class AxisDetectionService {
         for (int y=1; y<h-1; y++){
             double rowSum = 0;
             for (int x=1; x<w-1; x++){
-                int c = px[y*w + x];
                 int up = px[(y-1)*w + x];
                 int dn = px[(y+1)*w + x];
                 int gy = lum(dn) - lum(up);
@@ -230,11 +303,12 @@ public class AxisDetectionService {
         public double refPriceAtRefY;
         public List<Tick> tickYs;
     }
+    public static class Prior { public boolean axisOnRight = true; public double axisWidthFrac = 0.12; }
     public static class Tick {
         public double y; public double price;
         public Tick(double y, double price){ this.y=y; this.price=price; }
     }
-    static class PointY { double y; double price; PointY(double y,double p){this.y=y;this.price=p;} }
+    static class PointY { double y; double price; double w=1.0; PointY(double y,double p){this.y=y;this.price=p;} }
 }
 
 

@@ -15,7 +15,7 @@ public class CandleService {
         // Stub generator: 100 candles with a simple upward bias
         List<Candle> list = new ArrayList<>();
         Instant ts = start == null ? Instant.now().minus(100, ChronoUnit.DAYS) : start;
-        Instant until = end == null ? Instant.now() : end;
+        // Instant until = end == null ? Instant.now() : end; // unused in stub
         int steps = 100;
         BigDecimal price = new BigDecimal("100");
         for (int i = 0; i < steps; i++) {

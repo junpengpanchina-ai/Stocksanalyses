@@ -1,6 +1,5 @@
 package com.stocksanalyses.service;
 
-import com.stocksanalyses.model.Signal;
 import com.stocksanalyses.model.StrategyConfig;
 import com.stocksanalyses.model.UploadAnalyzeResult;
 import org.springframework.stereotype.Service;
@@ -23,8 +22,10 @@ public class UploadAnalyzeService {
     private final TemplateClassifier templateClassifier;
     private final AxisDetectionService axisDetectionService;
     private final TemplateSignatureBaselineService templateBaseline;
+    private final SegmentationClient segmentationClient;
+    private final CandleFusionService candleFusionService;
 
-    public UploadAnalyzeService(StrategyEngine strategyEngine, CandleService candleService, OcrService ocrService, MetricsService metricsService, io.micrometer.core.instrument.MeterRegistry meterRegistry, TemplateClassifier templateClassifier, AxisDetectionService axisDetectionService, TemplateSignatureBaselineService templateBaseline) {
+    public UploadAnalyzeService(StrategyEngine strategyEngine, CandleService candleService, OcrService ocrService, MetricsService metricsService, io.micrometer.core.instrument.MeterRegistry meterRegistry, TemplateClassifier templateClassifier, AxisDetectionService axisDetectionService, TemplateSignatureBaselineService templateBaseline, SegmentationClient segmentationClient, CandleFusionService candleFusionService) {
         this.strategyEngine = strategyEngine;
         this.candleService = candleService;
         this.ocrService = ocrService;
@@ -33,6 +34,8 @@ public class UploadAnalyzeService {
         this.templateClassifier = templateClassifier;
         this.axisDetectionService = axisDetectionService;
         this.templateBaseline = templateBaseline;
+        this.segmentationClient = segmentationClient;
+        this.candleFusionService = candleFusionService;
     }
 
     public UploadAnalyzeResult analyze(MultipartFile file, String hintStyle,
@@ -67,8 +70,9 @@ public class UploadAnalyzeService {
         if (!hasCalib) {
             // Template classification
             var sig = templateClassifier.classifyWithSignature(file);
-            // Axis detection
-            var axisRes = axisDetectionService.detectYAxis(file);
+            // Axis detection with template prior
+            var prior = templateClassifier.getAxisPrior(sig);
+            var axisRes = axisDetectionService.detectYAxis(file, prior);
             if (axisRes.isPresent()) {
                 var ar = axisRes.get();
                 // choose two ticks far apart
@@ -96,8 +100,16 @@ public class UploadAnalyzeService {
         }
 
         if (hasCalib) {
-            double dy = calibY1 - calibY2;
-            double dp = calibPrice2 - calibPrice1;
+            java.util.Objects.requireNonNull(calibY1, "calibY1");
+            java.util.Objects.requireNonNull(calibY2, "calibY2");
+            java.util.Objects.requireNonNull(calibPrice1, "calibPrice1");
+            java.util.Objects.requireNonNull(calibPrice2, "calibPrice2");
+            double cy1 = calibY1.doubleValue();
+            double cy2 = calibY2.doubleValue();
+            double cp1 = calibPrice1.doubleValue();
+            double cp2 = calibPrice2.doubleValue();
+            double dy = cy1 - cy2;
+            double dp = cp2 - cp1;
             Double pricePerPx = null;
             if (Math.abs(dy) > 1e-6) {
                 pricePerPx = dp / dy;
@@ -106,27 +118,54 @@ public class UploadAnalyzeService {
                     "x", Map.of("pixelsPerBar", 6.0),
                     "y", Map.of(
                             "pricePerPx", pricePerPx,
-                            "ref", Map.of("x", calibX1, "y", calibY1, "price", calibPrice1)
+                            "ref", Map.of("x", calibX1, "y", cy1, "price", cp1)
                     )
             );
             result.setAxes(axes);
             confidence = 0.7;
-            // Build recent N bars series overlay (y in pixels based on calibration, x index from right)
-            int n = Math.min(50, candles.size());
-            List<Map<String, Object>> series = new java.util.ArrayList<>(n);
-            for (int i = 0; i < n; i++) {
-                var c = candles.get(candles.size() - 1 - i);
-                Double yClose = pricePerPx == null ? null : (calibY1 + (calibPrice1 - c.getClose().doubleValue()) / pricePerPx);
-                Double yOpen = pricePerPx == null ? null : (calibY1 + (calibPrice1 - c.getOpen().doubleValue()) / pricePerPx);
-                Double yHigh = pricePerPx == null ? null : (calibY1 + (calibPrice1 - c.getHigh().doubleValue()) / pricePerPx);
-                Double yLow = pricePerPx == null ? null : (calibY1 + (calibPrice1 - c.getLow().doubleValue()) / pricePerPx);
-                series.add(Map.of(
-                        "idx", i,
-                        "yClose", yClose,
-                        "yOpen", yOpen,
-                        "yHigh", yHigh,
-                        "yLow", yLow
-                ));
+            // Build series via segmentation fusion if available; fallback to projecting our candles
+            List<Map<String, Object>> series;
+            var seg = segmentationClient.segment(file);
+            if (seg.isPresent() || segmentationClient.isForceSegmentation()) {
+                if (seg.isPresent()) {
+                    var fused = candleFusionService.fuse(seg.get().imageWidth, seg.get().imageHeight, seg.get().instances, 6.0);
+                    series = new java.util.ArrayList<>(fused.size());
+                    for (var f : fused){
+                        Double yClose = f.yClose;
+                        Double yOpen  = f.yOpen;
+                        Double yHigh  = f.yHigh;
+                        Double yLow   = f.yLow;
+                        series.add(Map.of(
+                                "idx", f.idxFromRight,
+                                "yClose", yClose,
+                                "yOpen", yOpen,
+                                "yHigh", yHigh,
+                                "yLow", yLow
+                        ));
+                    }
+                    result.setPipelinePath(result.getPipelinePath()+" + SegFusion");
+                } else {
+                    // Force segmentation but no result - return empty series
+                    series = new java.util.ArrayList<>();
+                    result.setPipelinePath(result.getPipelinePath()+" + SegFusion(empty)");
+                }
+            } else {
+                int n = Math.min(50, candles.size());
+                series = new java.util.ArrayList<>(n);
+                for (int i = 0; i < n; i++) {
+                    var c = candles.get(candles.size() - 1 - i);
+                    Double yClose = pricePerPx == null ? null : (cy1 + (cp1 - c.getClose().doubleValue()) / pricePerPx);
+                    Double yOpen = pricePerPx == null ? null : (cy1 + (cp1 - c.getOpen().doubleValue()) / pricePerPx);
+                    Double yHigh = pricePerPx == null ? null : (cy1 + (cp1 - c.getHigh().doubleValue()) / pricePerPx);
+                    Double yLow = pricePerPx == null ? null : (cy1 + (cp1 - c.getLow().doubleValue()) / pricePerPx);
+                    series.add(Map.of(
+                            "idx", i,
+                            "yClose", yClose,
+                            "yOpen", yOpen,
+                            "yHigh", yHigh,
+                            "yLow", yLow
+                    ));
+                }
             }
             var overlays = new java.util.HashMap<String, Object>();
             overlays.put("calibration", Map.of(

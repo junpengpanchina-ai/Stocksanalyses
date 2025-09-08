@@ -44,9 +44,13 @@ public class StrategyEngine {
             if ((v = config.getParams().get("minPatternScore")) instanceof Number) minPatternScore = ((Number) v).doubleValue();
             // DSL-like patterns map: { patternName: { weight: number } }
             Object pw = config.getParams().get("patterns");
-            if (pw instanceof java.util.Map) {
-                //noinspection unchecked
-                patternWeights = (java.util.Map<String, Object>) pw;
+            if (pw instanceof java.util.Map<?,?>) {
+                java.util.Map<?,?> raw = (java.util.Map<?,?>) pw;
+                java.util.Map<String, Object> safe = new java.util.HashMap<>();
+                for (java.util.Map.Entry<?,?> e : raw.entrySet()) {
+                    if (e.getKey() instanceof String) safe.put((String)e.getKey(), e.getValue());
+                }
+                patternWeights = safe;
             }
         }
 
