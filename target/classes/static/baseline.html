@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Template Baseline</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid var(--border);padding:8px;text-align:left}
+    th{color:var(--muted);background:var(--panel)}
+    .toolbar a{ text-decoration:none }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand"><div class="dot"></div><h1>Template Baseline</h1></div>
+      <div class="toolbar">
+        <a class="btn" href="/upload.html">Upload</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Snapshot</h3>
+      <div class="content">
+        <div class="inputs" style="justify-content:space-between">
+          <div class="badge">Auto-loaded from /api/templates/baseline</div>
+          <button class="primary" id="export">Export CSV</button>
+        </div>
+        <div style="overflow:auto;margin-top:12px">
+          <table id="tbl">
+            <thead>
+              <tr><th>Style</th><th>Signature</th><th>Count</th><th>Success</th><th>SuccessRate</th><th>LastSeen</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <footer>Theme: Terminal Pro · © KLine Analytics</footer>
+  </div>
+
+  <script>
+    const rows = document.getElementById('rows');
+    async function load(){
+      const res = await fetch('/api/templates/baseline');
+      const data = await res.json();
+      const entries = Object.entries(data).map(([key,val])=>({
+        style: val.style || key.split(':')[0],
+        signature: val.signature || key.split(':')[1] || '-',
+        count: val.count||0,
+        success: val.success||0,
+        successRate: (val.count? (val.success*100/val.count):0).toFixed(1)+'%',
+        lastSeen: val.lastSeen||''
+      }));
+      rows.innerHTML = entries.map(e=>`<tr>
+        <td>${e.style}</td><td>${e.signature}</td><td>${e.count}</td><td>${e.success}</td><td>${e.successRate}</td><td>${e.lastSeen}</td>
+      </tr>`).join('');
+      window._baseline = entries;
+    }
+    load();
+
+    document.getElementById('export').onclick = () => {
+      const arr = window._baseline || [];
+      const header = ['style','signature','count','success','successRate','lastSeen'];
+      const csv = [header.join(',')].concat(arr.map(e=>header.map(h=>`"${String(e[h]||'').replaceAll('"','""')}"`).join(','))).join('\n');
+      const blob = new Blob([csv],{type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='template_baseline.csv'; a.click();
+      URL.revokeObjectURL(url);
+    };
+  </script>
+</body>
+</html>
+
+

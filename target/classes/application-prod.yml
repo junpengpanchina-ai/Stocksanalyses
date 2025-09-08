@@ -1,0 +1,25 @@
+server:
+  port: 8080
+logging:
+  level:
+    root: INFO
+spring:
+  jackson:
+    serialization:
+      WRITE_DATES_AS_TIMESTAMPS: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: 0.2
+  otlp:
+    tracing:
+      endpoint: http://otel-collector:4318/v1/traces
+
