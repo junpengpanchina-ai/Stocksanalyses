@@ -1,0 +1,29 @@
+{
+  "title": "StocksAnalyses Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    { "type": "stat", "title": "Uptime", "gridPos": {"h":4,"w":4,"x":0,"y":0},
+      "targets": [{"expr":"$uptime"}] },
+    { "type": "timeseries", "title": "HTTP RPS", "gridPos": {"h":8,"w":8,"x":4,"y":0},
+      "targets": [{"expr":"sum(rate($http_count[1m]))"}] },
+    { "type": "timeseries", "title": "HTTP p95", "gridPos": {"h":8,"w":8,"x":12,"y":0},
+      "targets": [{"expr":"histogram_quantile(0.95, sum(rate($http_bucket[5m])) by (le))"}] },
+    { "type": "timeseries", "title": "5xx Rate", "gridPos": {"h":8,"w":8,"x":0,"y":8},
+      "targets": [{"expr":"sum(rate($http_count{outcome='SERVER_ERROR'}[5m]))"}] },
+    { "type": "timeseries", "title": "JVM CPU", "gridPos": {"h":8,"w":8,"x":8,"y":8},
+      "targets": [{"expr":"$cpu"}] },
+    { "type": "timeseries", "title": "JVM Heap", "gridPos": {"h":8,"w":8,"x":16,"y":8},
+      "targets": [{"expr":"$heap{area='heap'}"}] }
+  ],
+  "templating": {
+    "list": [
+      { "name": "http_count", "type": "constant", "label": "http_count", "query": "${http_count}", "current": {"text": "${http_count}", "value": "${http_count}"}, "options": [] },
+      { "name": "http_bucket", "type": "constant", "label": "http_bucket", "query": "${http_bucket}", "current": {"text": "${http_bucket}", "value": "${http_bucket}"}, "options": [] },
+      { "name": "uptime", "type": "constant", "label": "uptime", "query": "${uptime}", "current": {"text": "${uptime}", "value": "${uptime}"}, "options": [] },
+      { "name": "cpu", "type": "constant", "label": "cpu", "query": "${cpu}", "current": {"text": "${cpu}", "value": "${cpu}"}, "options": [] },
+      { "name": "heap", "type": "constant", "label": "heap", "query": "${heap}", "current": {"text": "${heap}", "value": "${heap}"}, "options": [] }
+    ]
+  }
+}
+

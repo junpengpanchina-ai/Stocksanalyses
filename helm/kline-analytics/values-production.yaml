@@ -1,0 +1,165 @@
+# Production environment values
+replicaCount: 3
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+
+java:
+  heap:
+    initial: "1g"
+    maximum: "2g"
+  gc:
+    type: "G1GC"
+    options: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication"
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "prod"
+  - name: JAVA_OPTS
+    value: "-Xms1g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Dspring.profiles.active=prod"
+  - name: LOGGING_LEVEL_ROOT
+    value: "WARN"
+
+healthChecks:
+  liveness:
+    initialDelaySeconds: 90
+    periodSeconds: 30
+    timeoutSeconds: 15
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 3
+  startup:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 15
+
+gracefulShutdown:
+  terminationGracePeriodSeconds: 60
+  preStop:
+    enabled: true
+    command: ["/bin/sh", "-c", "sleep 30"]
+
+podAntiAffinity:
+  enabled: true
+  type: "hard"
+  topologyKey: "kubernetes.io/hostname"
+
+nodeSelector:
+  node-type: "compute-optimized"
+
+tolerations:
+  - key: "node-type"
+    operator: "Equal"
+    value: "compute-optimized"
+    effect: "NoSchedule"
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-type
+          operator: In
+          values:
+          - compute-optimized
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - kline-analytics
+      topologyKey: kubernetes.io/hostname
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    path: /actuator/prometheus
+    labels:
+      environment: production
+  prometheusRule:
+    enabled: true
+
+logging:
+  level: WARN
+  sampling:
+    enabled: true
+    rate: 0.01
+  retention:
+    days: 90
+  anonymization:
+    enabled: true
+    fields:
+      - "password"
+      - "token"
+      - "secret"
+      - "apiKey"
+
+backup:
+  enabled: true
+  schedule: "0 1 * * *" # Daily at 1 AM
+  retention: 30 # days
+  storage:
+    type: "s3"
+    bucket: "kline-analytics-prod-backups"
+    region: "us-west-2"
+  concurrency: 5
+  validation:
+    enabled: true
+    checksum: true
+
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: true
+      size: 100Gi
+    retention: "30d"
+  alertmanager:
+    enabled: true
+    persistentVolume:
+      enabled: true
+      size: 50Gi
+
+grafana:
+  enabled: true
+  adminPassword: "prod-admin-secure"
+  persistence:
+    enabled: true
+    size: 50Gi
+  dashboards:
+    default:
+      kline-analytics:
+        gnetId: 0
+        revision: 0
+        datasource: Prometheus
+
+elasticsearch:
+  enabled: true
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 100Gi
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+
+kibana:
+  enabled: true
+  replicas: 2
+  elasticsearchHosts: "http://elasticsearch-master:9200"

@@ -6,6 +6,11 @@
   <title>KLine App</title>
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="/js/param-validation.js"></script>
+  <script src="/js/multi-timeframe.js"></script>
+  <script src="/js/chart-visualization.js"></script>
+  <script src="/js/strategy-management.js"></script>
+  <script src="/js/reliability.js"></script>
   <style>
     #chart{height:520px;border:1px solid var(--border);border-radius:8px}
     .panel{display:grid;grid-template-columns:2fr 1fr;gap:16px}
@@ -28,12 +33,12 @@
 
     <div class="panel">
       <div class="card">
-        <h3>Chart</h3>
+        <h3>Chart · Multi-timeframe</h3>
         <div class="content">
           <div class="kv" style="justify-content:space-between">
             <div class="kv">
               <input id="symbol" placeholder="SYMBOL e.g. TEST" />
-              <select id="interval"><option value="1d">1d</option><option value="1h">1h</option></select>
+              <select id="interval"><option value="1d">1d</option><option value="1h">1h</option><option value="4h">4h</option><option value="15m">15m</option></select>
               <button class="primary" id="load">Load</button>
             </div>
             <div class="kv">
@@ -46,13 +51,26 @@
               <input type="file" id="overlayImg" accept="image/*" />
               <button class="btn" id="overlayBtn">Overlay</button>
               <label style="color:var(--muted)"><input id="overlayToggle" type="checkbox" checked /> overlay on</label>
+              <label style="color:var(--muted)"><input id="linkTf" type="checkbox" checked /> link timeframes</label>
             </div>
           </div>
-          <div id="chart"></div>
-          <div class="legend" style="margin-top:8px">
-            <span class="badge"><span class="k k-buy"></span> BUY</span>
-            <span class="badge"><span class="k k-sell"></span> SELL</span>
-            <span class="badge">overlay: reconstructed candles</span>
+          <div class="grid2">
+            <div>
+              <div id="chart" class="chart"></div>
+              <div class="legend" style="margin-top:8px">
+                <label class="badge"><input type="checkbox" id="toggleSignals" checked /> signals</label>
+                <span class="badge"><span class="k k-buy"></span> BUY</span>
+                <span class="badge"><span class="k k-sell"></span> SELL</span>
+                <span class="badge">overlay: reconstructed candles</span>
+              </div>
+            </div>
+            <div>
+              <div class="kv" style="margin-bottom:6px">
+                <select id="interval2"><option value="1h">1h</option><option value="15m">15m</option><option value="4h">4h</option><option value="1d">1d</option></select>
+                <button class="btn" id="load2">Load</button>
+              </div>
+              <div id="chart2" class="chart"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -69,6 +87,18 @@
       <h3>Strategies</h3>
       <div class="content" id="strats">
         <div class="skeleton" style="width:100%"></div>
+        <div class="kv" style="margin-top:8px">
+          <input id="strategyId" placeholder="id (e.g. my-strategy)" />
+          <input id="strategyVersion" placeholder="version (e.g. v2)" />
+          <textarea id="strategyJson" class="mono" style="width:100%;height:120px" placeholder='{"name":"ema-macd","params":{...}}'></textarea>
+        </div>
+        <div class="kv" style="margin-top:6px">
+          <button class="btn" id="btnPreviewStrategy">Preview</button>
+          <button class="primary" id="btnRegisterStrategy">Register</button>
+          <button class="btn" id="btnRollbackStrategy" title="Re-register previous version as new version">Rollback</button>
+          <span id="stratMsg" class="explain"></span>
+        </div>
+        <div id="stratList" class="mono" style="margin-top:8px;max-height:200px;overflow:auto"></div>
       </div>
     </div>
 
@@ -84,18 +114,23 @@
 
   <script>
     const chart = echarts.init(document.getElementById('chart'));
-    const state = { symbol:'TEST', interval:'1d', candles:[], signals:[], overlayPrices:[], overlayCandles:[] };
+    const chart2 = echarts.init(document.getElementById('chart2'));
+    const state = { symbol:'TEST', interval:'1d', interval2:'1h', candles:[], candles2:[], signals:[], overlayPrices:[], overlayCandles:[] };
     document.getElementById('symbol').value = state.symbol;
     document.getElementById('interval').value = state.interval;
+    document.getElementById('interval2').value = state.interval2;
 
-    async function fetchWithRetry(url, init={}, retries=2, backoff=300){
-      try { const r = await fetch(url, init); if (!r.ok) throw new Error('HTTP '+r.status); return r; }
-      catch(e){ if (retries<=0) throw e; await new Promise(rs=>setTimeout(rs, backoff)); return fetchWithRetry(url, init, retries-1, backoff*2); }
-    }
+    // 使用增强的fetchWithRetry（由reliability.js提供）
+    // 原始函数已被reliability.js中的enhancedFetchWithRetry替换
     async function fetchCandles(){
       const url = `/api/candles?symbol=${encodeURIComponent(state.symbol)}&interval=${state.interval}`;
-      const res = await fetchWithRetry(url); const arr = await res.json();
+      const res = await fetchWithRetry(url, {}, 3, 300); const arr = await res.json();
       state.candles = arr;
+    }
+    async function fetchCandles2(){
+      const url = `/api/candles?symbol=${encodeURIComponent(state.symbol)}&interval=${state.interval2}`;
+      const res = await fetchWithRetry(url, {}, 3, 300); const arr = await res.json();
+      state.candles2 = arr;
     }
     async function fetchSignals(){
       const params = new URLSearchParams({ symbol: state.symbol });
@@ -106,7 +141,8 @@
     }
     function renderChart(){
       const k = state.candles.map(c=>[new Date(c.timestamp).toISOString().slice(0,10), +c.open, +c.close, +c.low, +c.high]);
-      const sigPts = state.signals.map(s=>({ name: s.type, value:[new Date(s.timestamp).toISOString().slice(0,10), s.type==='BUY'?1:-1], itemStyle:{color:s.type==='BUY'?getComputedStyle(document.documentElement).getPropertyValue('--buy'):getComputedStyle(document.documentElement).getPropertyValue('--sell')}}));
+      const showSignals = document.getElementById('toggleSignals').checked;
+      const sigPts = showSignals ? state.signals.map(s=>({ name: s.type, value:[new Date(s.timestamp).toISOString().slice(0,10), s.type==='BUY'?1:-1], itemStyle:{color:s.type==='BUY'?getComputedStyle(document.documentElement).getPropertyValue('--buy'):getComputedStyle(document.documentElement).getPropertyValue('--sell')}})) : [];
       const option = {
         animation: false,
         tooltip: { trigger: 'axis' },
@@ -115,9 +151,14 @@
         grid: { left: 40, right: 20, top: 20, bottom: 40 },
         series: [
           { type:'candlestick', name: state.symbol, data: k.map(v=>v.slice(1)) },
-          { type:'scatter', name:'signals', data: sigPts, yAxisIndex:0 }
+          ...(showSignals? [{ type:'scatter', name:'signals', data: sigPts, yAxisIndex:0 }]: [])
         ]
       };
+      
+      // 集成多周期联动
+      if (window.multiTimeframeManager) {
+        window.multiTimeframeManager.setCharts(chart, chart2);
+      }
       const overlayOn = document.getElementById('overlayToggle').checked;
       if (overlayOn && state.overlayPrices.length){
         option.series.push({ type:'line', name:'overlay', data: k.map((v,i)=>[v[0], state.overlayPrices[i] ?? null]),
@@ -171,10 +212,26 @@
         });
       }
       chart.setOption(option);
+      
+      // 集成图表可视化增强
+      if (window.chartVisualization) {
+        window.chartVisualization.createSignalLegend(state.signals);
+      }
+    }
+    function renderChart2(){
+      const k = state.candles2.map(c=>[new Date(c.timestamp).toISOString().slice(0,10), +c.open, +c.close, +c.low, +c.high]);
+      const option = { animation:false, tooltip:{trigger:'axis'}, xAxis:{type:'category', data:k.map(v=>v[0])}, yAxis:{scale:true}, grid:{ left:40, right:20, top:20, bottom:40 }, series:[{type:'candlestick', name:`${state.symbol} ${state.interval2}`, data:k.map(v=>v.slice(1))}] };
+      chart2.setOption(option);
     }
     async function loadAll(){
       const inbox = document.getElementById('inbox'); inbox.innerHTML = '<div class="skeleton" style="width:100%"></div>';
       await fetchCandles(); await fetchSignals(); renderChart(); renderInbox();
+      if (document.getElementById('linkTf').checked) { state.interval2 = pickLinkedTf(state.interval); document.getElementById('interval2').value = state.interval2; }
+      await fetchCandles2(); renderChart2();
+    }
+    function pickLinkedTf(tf){
+      const map = { '1d':'1h', '4h':'15m', '1h':'15m', '15m':'1m' };
+      return map[tf] || '1h';
     }
     function renderInbox(){
       const box = document.getElementById('inbox');
@@ -196,6 +253,10 @@
       state.interval = document.getElementById('interval').value || '1d';
       saveParams();
       await loadAll();
+    };
+    document.getElementById('load2').onclick = async ()=>{
+      state.interval2 = document.getElementById('interval2').value || state.interval2;
+      await fetchCandles2(); renderChart2();
     };
     document.getElementById('apply').onclick = async ()=>{ saveParams(); await loadAll(); };
     document.getElementById('runbt').onclick = async ()=>{
@@ -248,7 +309,7 @@
 
     loadParams();
     loadAll();
-    window.addEventListener('resize', ()=> chart.resize());
+    window.addEventListener('resize', ()=> { chart.resize(); chart2.resize(); });
 
     // Strategies panel
     async function loadStrats(){
@@ -257,9 +318,55 @@
         const json = await res.json();
         const el = document.getElementById('strats');
         el.innerHTML = Object.entries(json).map(([k,v])=>`<div class="badge" style="margin:6px 6px 0 0">${k}: ${v}</div>`).join('') || '<div class="empty">No strategies</div>';
+        // list items
+        document.getElementById('stratList').textContent = JSON.stringify(json, null, 2);
       } catch(e){ document.getElementById('strats').innerHTML = '<div class="error">Failed to load strategies. Retry later.</div>'; }
     }
     loadStrats();
+
+    // Strategy actions
+    document.getElementById('btnPreviewStrategy').onclick = ()=>{
+      try {
+        const obj = JSON.parse(document.getElementById('strategyJson').value || '{}');
+        document.getElementById('stratMsg').textContent = 'Valid JSON';
+        document.getElementById('stratMsg').style.color = '#9AA4AE';
+      } catch(e){
+        document.getElementById('stratMsg').textContent = 'JSON Error: '+e.message;
+        document.getElementById('stratMsg').style.color = '#ffb4b4';
+      }
+    };
+    document.getElementById('btnRegisterStrategy').onclick = async ()=>{
+      const id = document.getElementById('strategyId').value?.trim();
+      const version = document.getElementById('strategyVersion').value?.trim();
+      const json = document.getElementById('strategyJson').value || '{}';
+      if (!id || !version) { document.getElementById('stratMsg').textContent = 'id/version required'; document.getElementById('stratMsg').style.color = '#ffb4b4'; return; }
+      let dsl; try { dsl = JSON.parse(json); } catch(e){ document.getElementById('stratMsg').textContent = 'JSON Error: '+e.message; document.getElementById('stratMsg').style.color = '#ffb4b4'; return; }
+      const body = { id, version, dsl };
+      try {
+        const res = await fetchWithRetry('/api/strategies', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }, 2, 500);
+        const out = await res.json();
+        if (out.error) { document.getElementById('stratMsg').textContent = 'Register failed: '+(out.messages?.join?.('; ')||out.error); document.getElementById('stratMsg').style.color = '#ffb4b4'; }
+        else { document.getElementById('stratMsg').textContent = 'Registered'; document.getElementById('stratMsg').style.color = '#9AA4AE'; loadStrats(); }
+      } catch(e){ document.getElementById('stratMsg').textContent = 'Network Error: '+e.message; document.getElementById('stratMsg').style.color = '#ffb4b4'; }
+    };
+    document.getElementById('btnRollbackStrategy').onclick = async ()=>{
+      // Simple client-side rollback: fetch list, re-register previous version as new version by bumping suffix
+      try {
+        const id = document.getElementById('strategyId').value?.trim(); if(!id) throw new Error('id required');
+        const latestRes = await fetchWithRetry(`/api/strategies/${encodeURIComponent(id)}`);
+        const versions = await latestRes.json();
+        if (!Array.isArray(versions) || versions.length < 2) throw new Error('Not enough versions to rollback');
+        const prev = versions[versions.length-2];
+        const newVersion = (document.getElementById('strategyVersion').value?.trim()) || (prev.version+"-rollback");
+        const body = { id, version: newVersion, dsl: prev.dsl };
+        const res = await fetchWithRetry('/api/strategies', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }, 2, 500);
+        const out = await res.json();
+        if (out.error) throw new Error(out.messages?.join?.('; ')||out.error);
+        document.getElementById('stratMsg').textContent = `Rolled back to ${prev.version} -> ${newVersion}`;
+        document.getElementById('stratMsg').style.color = '#9AA4AE';
+        loadStrats();
+      } catch(e){ document.getElementById('stratMsg').textContent = 'Rollback failed: '+e.message; document.getElementById('stratMsg').style.color = '#ffb4b4'; }
+    };
   </script>
 </body>
 </html>

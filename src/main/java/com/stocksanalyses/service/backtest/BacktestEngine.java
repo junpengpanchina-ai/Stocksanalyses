@@ -21,42 +21,109 @@ public class BacktestEngine {
         this.strategyEngine = strategyEngine;
     }
 
+    private double pickExecPrice(String mode, Candle last, List<Candle> window){
+        switch (mode){
+            case "OPEN":
+                return last.getOpen().doubleValue();
+            case "VWAP":
+                // simple approx VWAP over window (last N=20 bars)
+                int n = Math.min(20, window.size());
+                double pv=0, vol=0;
+                for (int i=window.size()-n;i<window.size();i++){
+                    Candle c = window.get(i);
+                    double v = Math.max(1, c.getVolume());
+                    double p = (c.getHigh().doubleValue()+c.getLow().doubleValue()+c.getClose().doubleValue())/3.0;
+                    pv += p*v; vol += v;
+                }
+                return vol>0? pv/vol : last.getClose().doubleValue();
+            case "TWAP":
+                int m = Math.min(20, window.size());
+                double sum=0; for (int i=window.size()-m;i<window.size();i++) sum += window.get(i).getClose().doubleValue();
+                return sum/m;
+            case "CLOSE":
+            default:
+                return last.getClose().doubleValue();
+        }
+    }
+
     public BacktestResult run(BacktestRequest req){
         String symbol = req.universe.get(0);
         Instant start = req.start==null? Instant.now().minusSeconds(86400L*200): Instant.parse(req.start);
         Instant end = req.end==null? Instant.now(): Instant.parse(req.end);
         List<Candle> candles = candleService.getCandles(symbol, req.interval==null?"1d":req.interval, start, end);
-        CostModel cm = notional -> notional * (((Number) req.costModel.getOrDefault("bps", 0)).doubleValue()/10000.0);
-        SlippageModel sm = price -> price * (((Number) req.slippageModel.getOrDefault("bps", 0)).doubleValue()/10000.0);
+        CostModel cm = notional -> {
+            double bps = req.costModel!=null? ((Number) req.costModel.getOrDefault("bps", 0)).doubleValue():0.0;
+            double perTrade = req.costModel!=null? ((Number) req.costModel.getOrDefault("perTrade", 0)).doubleValue():0.0;
+            double minFee = req.costModel!=null? ((Number) req.costModel.getOrDefault("minFee", 0)).doubleValue():0.0;
+            double fee = notional * (bps/10000.0) + perTrade;
+            return Math.max(fee, minFee);
+        };
+        SlippageModel sm = price -> {
+            if (req.slippageModel==null) return 0.0;
+            String type = String.valueOf(req.slippageModel.getOrDefault("type", "bps"));
+            if ("ticks".equalsIgnoreCase(type)){
+                double ticks = ((Number) req.slippageModel.getOrDefault("ticks", 0)).doubleValue();
+                double tickSize = ((Number) req.slippageModel.getOrDefault("tickSize", 0.01)).doubleValue();
+                return ticks * tickSize;
+            } else {
+                double bps = ((Number) req.slippageModel.getOrDefault("bps", 0)).doubleValue();
+                return price * (bps/10000.0);
+            }
+        };
 
         double cash = req.initialCapital; double pos = 0;
         List<Map<String,Object>> trades = new ArrayList<>();
         List<Double> equity = new ArrayList<>();
+
+        java.util.Set<java.time.LocalDate> holidaySet = new java.util.HashSet<>();
+        if (req.holidays!=null) for (String d : req.holidays) holidaySet.add(java.time.LocalDate.parse(d));
+        java.util.Set<java.time.LocalDate> halts = new java.util.HashSet<>();
+        if (req.halts!=null) for (String d : req.halts) halts.add(java.time.LocalDate.parse(d));
+
+        String execMode = req.executionMode!=null? req.executionMode.toUpperCase() : "CLOSE";
+        boolean sameBar = req.sameBarVisible!=null? req.sameBarVisible : false;
+        int delay = req.executionDelayBars!=null? req.executionDelayBars : (sameBar? 0 : 1);
+        java.util.Deque<Signal> pending = new java.util.ArrayDeque<>();
 
         for (int i=0;i<candles.size();i++){
             List<Candle> window = candles.subList(0, i+1);
             List<Signal> sigs = strategyEngine.generateSignals(symbol, window, req.strategyConfig);
             Candle last = candles.get(i);
             double mkt = last.getClose().doubleValue();
+            java.time.LocalDate tradeDate = last.getTimestamp().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+            if ((req.skipWeekends && (tradeDate.getDayOfWeek().getValue()>=6)) || holidaySet.contains(tradeDate) || halts.contains(tradeDate)){
+                double markEquitySkip = cash + pos * mkt;
+                equity.add(markEquitySkip);
+                continue;
+            }
+
+            if (!sigs.isEmpty()) pending.addAll(sigs);
+
+            if (delay>0){
+                delay--; // wait bars
+            }
+
+            if (delay==0 && !pending.isEmpty()){
+                Signal s = pending.pollFirst();
+                delay = req.executionDelayBars!=null? req.executionDelayBars : 0;
+                double pxExec = pickExecPrice(execMode, last, window);
             // simple decision: BUY full if BUY signal and no position; SELL flat if SELL and have position
-            if (!sigs.isEmpty()){
-                Signal s = sigs.get(0);
                 if (s.getType()== Signal.Type.BUY && pos==0){
-                    double px = mkt + sm.slip(mkt);
+                    double px = pxExec + sm.slip(pxExec);
                     double qty = Math.floor((cash * 0.99) / px);
                     if (qty>0){
                         double notional = qty * px;
                         double fee = cm.cost(notional);
                         cash -= (notional + fee);
                         pos += qty;
-                        trades.add(Map.of("ts", last.getTimestamp().toString(), "side","BUY", "qty", qty, "price", px, "fee", fee));
+                        trades.add(Map.of("ts", last.getTimestamp().toString(), "side","BUY", "qty", qty, "price", px, "fee", fee, "mode", execMode));
                     }
                 } else if (s.getType()== Signal.Type.SELL && pos>0){
-                    double px = mkt - sm.slip(mkt);
+                    double px = pxExec - sm.slip(pxExec);
                     double notional = pos * px;
                     double fee = cm.cost(notional);
                     cash += (notional - fee);
-                    trades.add(Map.of("ts", last.getTimestamp().toString(), "side","SELL", "qty", pos, "price", px, "fee", fee));
+                    trades.add(Map.of("ts", last.getTimestamp().toString(), "side","SELL", "qty", pos, "price", px, "fee", fee, "mode", execMode));
                     pos = 0;
                 }
             }

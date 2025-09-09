@@ -1,0 +1,10 @@
+{{- if .Values.bench.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-bench
+data:
+  k6-smoke.js: |
+{{ (.Files.Get "benchmarks/k6-smoke.js" | indent 4) }}
+{{- end }}
+

@@ -1,0 +1,73 @@
+{{- if and .Values.istio.rateLimit.enabled .Values.istio.rateLimit.v3.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-rl-v3-filter
+  namespace: istio-system
+spec:
+  workloadSelector:
+    labels:
+      istio: {{ .Values.istio.rateLimit.gatewaySelector.istio | quote }}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener: { filterChain: { filter: { name: envoy.filters.network.http_connection_manager }}}
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.ratelimit
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+            domain: {{ .Values.istio.rateLimit.v3.domain }}
+            failure_mode_deny: false
+            rate_limit_service:
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: outbound|{{ .Values.istio.rateLimit.v3.servicePort }}||{{ .Values.istio.rateLimit.v3.serviceHost }}
+                timeout: 0.25s
+              transport_api_version: V3
+    - applyTo: CLUSTER
+      match: { context: GATEWAY }
+      patch:
+        operation: ADD
+        value:
+          name: outbound|{{ .Values.istio.rateLimit.v3.servicePort }}||{{ .Values.istio.rateLimit.v3.serviceHost }}
+          type: STRICT_DNS
+          connect_timeout: 0.25s
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+            cluster_name: outbound|{{ .Values.istio.rateLimit.v3.servicePort }}||{{ .Values.istio.rateLimit.v3.serviceHost }}
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: {{ .Values.istio.rateLimit.v3.serviceHost }}
+                          port_value: {{ .Values.istio.rateLimit.v3.servicePort }}
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+      patch:
+        operation: MERGE
+        value:
+          route:
+            rate_limits:
+              - actions:
+                  - request_headers:
+                      header_name: {{ .Values.istio.rateLimit.v3.userHeader }}
+                      descriptor_key: user
+                  - request_headers:
+                      header_name: {{ .Values.istio.rateLimit.v3.tenantHeader }}
+                      descriptor_key: tenant
+                  - request_headers:
+                      header_name: {{ .Values.istio.rateLimit.v3.strategyHeader }}
+                      descriptor_key: strategy
+                  - request_headers:
+                      header_name: {{ .Values.istio.rateLimit.v3.methodHeader }}
+                      descriptor_key: method
+                  - request_headers:
+                      header_name: :path
+                      descriptor_key: path
+{{- end }}
+

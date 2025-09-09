@@ -1,0 +1,46 @@
+replicaCount: 3
+
+image:
+  repository: registry.example.com/stocksanalyses
+  tag: "2025-09-01"
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: kline.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2
+    memory: 2Gi
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: JAVA_OPTS
+    value: "-Xms512m -Xmx2048m"
+
+metrics:
+  serviceMonitor:
+    interval: 10s
+  prometheusRule:
+    enabled: true
+    groups:
+      - name: stocksanalyses.rules
+        rules:
+          - alert: HighLatencyP95
+            expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le)) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: P95 latency high
+

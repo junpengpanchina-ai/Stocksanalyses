@@ -1,0 +1,131 @@
+{{- if .Values.backup.restore.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-restore
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restore
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "kline-analytics.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: restore
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "kline-analytics.fullname" . }}-backup
+      containers:
+      - name: restore
+        image: postgres:13-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          
+          # Configuration
+          RESTORE_DIR="/restore"
+          BACKUP_FILE="{{ .Values.backup.restore.backupFile }}"
+          COMPRESSED_FILE="${BACKUP_FILE}.gz"
+          CHECKSUM_FILE="${COMPRESSED_FILE}.sha256"
+          
+          # Create restore directory
+          mkdir -p ${RESTORE_DIR}
+          
+          # Download backup from S3
+          echo "Downloading backup from S3..."
+          aws s3 cp s3://${S3_BUCKET}/backups/${COMPRESSED_FILE} ${RESTORE_DIR}/${COMPRESSED_FILE}
+          aws s3 cp s3://${S3_BUCKET}/backups/${CHECKSUM_FILE} ${RESTORE_DIR}/${CHECKSUM_FILE}
+          
+          # Verify checksum
+          echo "Verifying checksum..."
+          cd ${RESTORE_DIR}
+          sha256sum -c ${CHECKSUM_FILE}
+          
+          # Decompress backup
+          echo "Decompressing backup..."
+          gunzip ${COMPRESSED_FILE}
+          
+          # Create database if not exists
+          echo "Creating database if not exists..."
+          psql \
+            --host=${DB_HOST} \
+            --port=${DB_PORT} \
+            --username=${DB_USER} \
+            --dbname=postgres \
+            --command="CREATE DATABASE ${DB_NAME} IF NOT EXISTS;"
+          
+          # Restore database
+          echo "Restoring database..."
+          psql \
+            --host=${DB_HOST} \
+            --port=${DB_PORT} \
+            --username=${DB_USER} \
+            --dbname=${DB_NAME} \
+            --file=${RESTORE_DIR}/${BACKUP_FILE}
+          
+          # Verify restore
+          echo "Verifying restore..."
+          psql \
+            --host=${DB_HOST} \
+            --port=${DB_PORT} \
+            --username=${DB_USER} \
+            --dbname=${DB_NAME} \
+            --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';"
+          
+          echo "Restore completed successfully"
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-db-secret
+              key: host
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-db-secret
+              key: port
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-db-secret
+              key: username
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-db-secret
+              key: database
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-db-secret
+              key: password
+        - name: S3_BUCKET
+          value: "{{ .Values.backup.storage.bucket }}"
+        - name: AWS_DEFAULT_REGION
+          value: "{{ .Values.backup.storage.region }}"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-s3-secret
+              key: access-key-id
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "kline-analytics.fullname" . }}-s3-secret
+              key: secret-access-key
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: restore-storage
+          mountPath: /restore
+      volumes:
+      - name: restore-storage
+        emptyDir: {}
+{{- end }}

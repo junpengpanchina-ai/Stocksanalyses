@@ -1,0 +1,82 @@
+# Staging environment values
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+java:
+  heap:
+    initial: "512m"
+    maximum: "1g"
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "staging"
+  - name: JAVA_OPTS
+    value: "-Xms512m -Xmx1g -XX:+UseG1GC -Dspring.profiles.active=staging"
+  - name: LOGGING_LEVEL_ROOT
+    value: "INFO"
+
+healthChecks:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 30
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  startup:
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    failureThreshold: 12
+
+gracefulShutdown:
+  terminationGracePeriodSeconds: 30
+
+podAntiAffinity:
+  enabled: true
+  type: "soft"
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  prometheusRule:
+    enabled: true
+
+logging:
+  level: INFO
+  sampling:
+    enabled: true
+    rate: 0.1
+
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: 7
+
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: true
+      size: 20Gi
+
+grafana:
+  enabled: true
+  adminPassword: "staging-admin"
+
+elasticsearch:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 20Gi
+
+kibana:
+  enabled: true
+  replicas: 1

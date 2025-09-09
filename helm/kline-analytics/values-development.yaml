@@ -1,0 +1,67 @@
+# Development environment values
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+java:
+  heap:
+    initial: "256m"
+    maximum: "512m"
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "dev"
+  - name: JAVA_OPTS
+    value: "-Xms256m -Xmx512m -XX:+UseG1GC -Dspring.profiles.active=dev"
+  - name: LOGGING_LEVEL_ROOT
+    value: "DEBUG"
+
+healthChecks:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 15
+  readiness:
+    initialDelaySeconds: 15
+    periodSeconds: 5
+  startup:
+    initialDelaySeconds: 5
+    periodSeconds: 3
+    failureThreshold: 6
+
+gracefulShutdown:
+  terminationGracePeriodSeconds: 15
+
+podAntiAffinity:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: false
+
+logging:
+  level: DEBUG
+  sampling:
+    enabled: false
+
+backup:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+elasticsearch:
+  enabled: false
+
+kibana:
+  enabled: false

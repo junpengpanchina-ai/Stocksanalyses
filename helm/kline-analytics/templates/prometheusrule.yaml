@@ -1,0 +1,153 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-rules
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+  - name: kline-analytics.rules
+    rules:
+    # Application health alerts
+    - alert: KlineAnalyticsDown
+      expr: up{job="{{ include "kline-analytics.fullname" . }}" } == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: kline-analytics
+      annotations:
+        summary: "KLine Analytics is down"
+        description: "KLine Analytics has been down for more than 1 minute."
+        runbook_url: "https://wiki.company.com/runbooks/kline-analytics-down"
+
+    - alert: KlineAnalyticsHighErrorRate
+      expr: rate(kline_analytics_http_requests_total{status=~"5.."}[5m]) / rate(kline_analytics_http_requests_total[5m]) > 0.05
+      for: 2m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes."
+
+    - alert: KlineAnalyticsHighResponseTime
+      expr: histogram_quantile(0.95, rate(kline_analytics_http_requests_duration_seconds_bucket[5m])) > 1
+      for: 3m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High response time detected"
+        description: "95th percentile response time is {{ $value }}s for the last 5 minutes."
+
+    # JVM alerts
+    - alert: KlineAnalyticsHighMemoryUsage
+      expr: kline_analytics_jvm_memory_used_bytes / kline_analytics_jvm_memory_max_bytes > 0.85
+      for: 5m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High memory usage detected"
+        description: "JVM memory usage is {{ $value | humanizePercentage }}."
+
+    - alert: KlineAnalyticsHighGCPause
+      expr: rate(kline_analytics_jvm_gc_pause_seconds_sum[5m]) > 0.1
+      for: 3m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High GC pause time detected"
+        description: "GC pause time is {{ $value }}s per second for the last 5 minutes."
+
+    # Business logic alerts
+    - alert: KlineAnalyticsLowSignalGeneration
+      expr: rate(kline_analytics_signals_generated_total[10m]) < 0.1
+      for: 10m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "Low signal generation rate"
+        description: "Signal generation rate is {{ $value }} per second for the last 10 minutes."
+
+    - alert: KlineAnalyticsHighOrderProcessingTime
+      expr: histogram_quantile(0.95, rate(kline_analytics_matching_engine_duration_seconds_bucket[5m])) > 0.5
+      for: 3m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High order processing time"
+        description: "95th percentile order processing time is {{ $value }}s for the last 5 minutes."
+
+    # Resource alerts
+    - alert: KlineAnalyticsHighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{pod=~"{{ include "kline-analytics.fullname" . }}.*"}[5m]) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is {{ $value | humanizePercentage }} for the last 5 minutes."
+
+    - alert: KlineAnalyticsHighMemoryUsageContainer
+      expr: container_memory_usage_bytes{pod=~"{{ include "kline-analytics.fullname" . }}.*"} / container_spec_memory_limit_bytes{pod=~"{{ include "kline-analytics.fullname" . }}.*"} > 0.9
+      for: 5m
+      labels:
+        severity: critical
+        service: kline-analytics
+      annotations:
+        summary: "High container memory usage"
+        description: "Container memory usage is {{ $value | humanizePercentage }}."
+
+    # Dependency alerts
+    - alert: KlineAnalyticsDatabaseConnectionFailure
+      expr: rate(kline_analytics_database_connections_failed_total[5m]) > 0.1
+      for: 2m
+      labels:
+        severity: critical
+        service: kline-analytics
+      annotations:
+        summary: "Database connection failures detected"
+        description: "Database connection failure rate is {{ $value }} per second for the last 5 minutes."
+
+    - alert: KlineAnalyticsExternalAPIFailure
+      expr: rate(kline_analytics_external_api_calls_failed_total[5m]) > 0.2
+      for: 3m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "External API failures detected"
+        description: "External API failure rate is {{ $value }} per second for the last 5 minutes."
+
+  # Alert suppression rules
+  - name: kline-analytics.suppression
+    rules:
+    - alert: KlineAnalyticsMaintenanceMode
+      expr: kline_analytics_maintenance_mode == 1
+      for: 0s
+      labels:
+        severity: info
+        service: kline-analytics
+      annotations:
+        summary: "Application in maintenance mode"
+        description: "KLine Analytics is currently in maintenance mode."
+
+    # Silence rules for canary deployments
+    - alert: KlineAnalyticsCanaryDeployment
+      expr: kline_analytics_deployment_type == "canary"
+      for: 0s
+      labels:
+        severity: info
+        service: kline-analytics
+      annotations:
+        summary: "Canary deployment active"
+        description: "KLine Analytics is running a canary deployment."
+{{- end }}

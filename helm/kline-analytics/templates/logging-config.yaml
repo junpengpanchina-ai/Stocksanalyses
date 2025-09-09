@@ -1,0 +1,309 @@
+{{- if .Values.logging.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-logging-config
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+data:
+  logback-spring.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+        <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+        
+        <!-- Console appender -->
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp/>
+                    <logLevel/>
+                    <loggerName/>
+                    <message/>
+                    <mdc/>
+                    <stackTrace/>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "kline-analytics",
+                                "version": "{{ .Chart.AppVersion }}",
+                                "environment": "{{ .Values.global.environment | default "production" }}",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "namespace": "${KUBERNETES_NAMESPACE:-default}"
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+
+        <!-- File appender -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>/app/logs/kline-analytics.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>/app/logs/kline-analytics.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <timeBasedFileNamingAndTriggeringPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
+                    <maxFileSize>100MB</maxFileSize>
+                </timeBasedFileNamingAndTriggeringPolicy>
+                <maxHistory>{{ .Values.logging.retention.days | default 30 }}</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp/>
+                    <logLevel/>
+                    <loggerName/>
+                    <message/>
+                    <mdc/>
+                    <stackTrace/>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "kline-analytics",
+                                "version": "{{ .Chart.AppVersion }}",
+                                "environment": "{{ .Values.global.environment | default "production" }}",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "namespace": "${KUBERNETES_NAMESPACE:-default}"
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+
+        <!-- Sampling appender -->
+        {{- if .Values.logging.sampling.enabled }}
+        <appender name="SAMPLING" class="ch.qos.logback.core.ConsoleAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>WARN</level>
+            </filter>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp/>
+                    <logLevel/>
+                    <loggerName/>
+                    <message/>
+                    <mdc/>
+                    <stackTrace/>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "kline-analytics",
+                                "version": "{{ .Chart.AppVersion }}",
+                                "environment": "{{ .Values.global.environment | default "production" }}",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "namespace": "${KUBERNETES_NAMESPACE:-default}",
+                                "sampled": true
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+        {{- end }}
+
+        <!-- Security appender for sensitive data -->
+        <appender name="SECURITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>/app/logs/security.log</file>
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>/app/logs/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>90</maxHistory>
+            </rollingPolicy>
+            <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+                <providers>
+                    <timestamp/>
+                    <logLevel/>
+                    <loggerName/>
+                    <message/>
+                    <mdc/>
+                    <stackTrace/>
+                    <pattern>
+                        <pattern>
+                            {
+                                "service": "kline-analytics",
+                                "version": "{{ .Chart.AppVersion }}",
+                                "environment": "{{ .Values.global.environment | default "production" }}",
+                                "pod": "${HOSTNAME:-unknown}",
+                                "namespace": "${KUBERNETES_NAMESPACE:-default}",
+                                "security": true
+                            }
+                        </pattern>
+                    </pattern>
+                </providers>
+            </encoder>
+        </appender>
+
+        <!-- Logger configurations -->
+        <logger name="com.stocksanalyses" level="{{ .Values.logging.level | default "INFO" }}" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+            {{- if .Values.logging.sampling.enabled }}
+            <appender-ref ref="SAMPLING"/>
+            {{- end }}
+        </logger>
+
+        <logger name="org.springframework.security" level="INFO" additivity="false">
+            <appender-ref ref="SECURITY"/>
+        </logger>
+
+        <logger name="org.springframework.web" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </logger>
+
+        <logger name="org.hibernate" level="WARN" additivity="false">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </logger>
+
+        <!-- Root logger -->
+        <root level="{{ .Values.logging.level | default "INFO" }}">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="FILE"/>
+        </root>
+    </configuration>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-logstash-config
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+
+    filter {
+      if [fields][service] == "kline-analytics" {
+        # Parse JSON logs
+        if [message] =~ /^\{.*\}$/ {
+          json {
+            source => "message"
+          }
+        }
+
+        # Add timestamp
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+
+        # Anonymize sensitive data
+        {{- if .Values.logging.anonymization.enabled }}
+        {{- range .Values.logging.anonymization.fields }}
+        mutate {
+          gsub => [ "{{ . }}", ".*", "[REDACTED]" ]
+        }
+        {{- end }}
+        {{- end }}
+
+        # Add environment tags
+        mutate {
+          add_field => { "environment" => "{{ .Values.global.environment | default "production" }}" }
+          add_field => { "service" => "kline-analytics" }
+          add_field => { "version" => "{{ .Chart.AppVersion }}" }
+        }
+
+        # Parse HTTP request logs
+        if [message] =~ /HTTP/ {
+          grok {
+            match => { "message" => "%{HTTPDATE:timestamp} %{WORD:method} %{URIPATH:path} %{NUMBER:status} %{NUMBER:duration}" }
+          }
+        }
+
+        # Parse error logs
+        if [level] == "ERROR" {
+          mutate {
+            add_tag => [ "error" ]
+          }
+        }
+
+        # Parse security logs
+        if [logger_name] =~ /security/ {
+          mutate {
+            add_tag => [ "security" ]
+          }
+        }
+      }
+    }
+
+    output {
+      if [fields][service] == "kline-analytics" {
+        elasticsearch {
+          hosts => ["elasticsearch-master:9200"]
+          index => "kline-analytics-%{+YYYY.MM.dd}"
+          template_name => "kline-analytics"
+          template => "/usr/share/logstash/templates/kline-analytics.json"
+          template_overwrite => true
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-kibana-index-template
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+data:
+  kline-analytics.json: |
+    {
+      "index_patterns": ["kline-analytics-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "5s"
+        },
+        "mappings": {
+          "properties": {
+            "@timestamp": {
+              "type": "date"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "version": {
+              "type": "keyword"
+            },
+            "environment": {
+              "type": "keyword"
+            },
+            "pod": {
+              "type": "keyword"
+            },
+            "namespace": {
+              "type": "keyword"
+            },
+            "level": {
+              "type": "keyword"
+            },
+            "logger_name": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text",
+              "analyzer": "standard"
+            },
+            "method": {
+              "type": "keyword"
+            },
+            "path": {
+              "type": "keyword"
+            },
+            "status": {
+              "type": "integer"
+            },
+            "duration": {
+              "type": "float"
+            },
+            "tags": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+{{- end }}

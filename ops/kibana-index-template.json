@@ -1,0 +1,139 @@
+{
+  "index_patterns": ["kline-analytics-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "index.refresh_interval": "5s",
+      "index.lifecycle.name": "kline-analytics-policy",
+      "index.lifecycle.rollover_alias": "kline-analytics"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "service": {
+          "type": "keyword"
+        },
+        "version": {
+          "type": "keyword"
+        },
+        "environment": {
+          "type": "keyword"
+        },
+        "pod": {
+          "type": "keyword"
+        },
+        "namespace": {
+          "type": "keyword"
+        },
+        "level": {
+          "type": "keyword"
+        },
+        "logger_name": {
+          "type": "keyword"
+        },
+        "message": {
+          "type": "text",
+          "analyzer": "standard",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        "method": {
+          "type": "keyword"
+        },
+        "path": {
+          "type": "keyword"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "duration": {
+          "type": "float"
+        },
+        "tags": {
+          "type": "keyword"
+        },
+        "user_id": {
+          "type": "keyword"
+        },
+        "session_id": {
+          "type": "keyword"
+        },
+        "request_id": {
+          "type": "keyword"
+        },
+        "trace_id": {
+          "type": "keyword"
+        },
+        "span_id": {
+          "type": "keyword"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text"
+            },
+            "stack_trace": {
+              "type": "text"
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "cpu_usage": {
+              "type": "float"
+            },
+            "memory_usage": {
+              "type": "float"
+            },
+            "heap_used": {
+              "type": "long"
+            },
+            "heap_max": {
+              "type": "long"
+            },
+            "gc_pause_time": {
+              "type": "float"
+            }
+          }
+        },
+        "business_metrics": {
+          "type": "object",
+          "properties": {
+            "signals_generated": {
+              "type": "long"
+            },
+            "orders_processed": {
+              "type": "long"
+            },
+            "trades_executed": {
+              "type": "long"
+            },
+            "revenue": {
+              "type": "float"
+            }
+          }
+        }
+      }
+    }
+  },
+  "priority": 100,
+  "composed_of": ["kline-analytics-settings", "kline-analytics-mappings"],
+  "version": 1,
+  "_meta": {
+    "description": "Index template for KLine Analytics logs",
+    "created_by": "DevOps Team",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+}

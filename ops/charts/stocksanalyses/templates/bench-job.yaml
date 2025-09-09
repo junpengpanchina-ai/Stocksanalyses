@@ -1,0 +1,29 @@
+{{- if .Values.bench.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-bench
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:0.48.0
+          env:
+            - name: BASE_URL
+              value: {{ printf "http://%s:%v" (include "stocksanalyses.fullname" .) .Values.service.port | quote }}
+            - name: VUS
+              value: {{ .Values.bench.vus | quote }}
+            - name: DURATION
+              value: {{ .Values.bench.duration | quote }}
+          volumeMounts:
+            - name: bench-scripts
+              mountPath: /scripts
+          command: ["k6","run","/scripts/k6-smoke.js"]
+      volumes:
+        - name: bench-scripts
+          configMap:
+            name: {{ include "stocksanalyses.fullname" . }}-bench
+{{- end }}
+

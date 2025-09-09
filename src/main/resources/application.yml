@@ -12,13 +12,19 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
-    url: jdbc:h2:mem:testdb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: 
+    timescale:
+      url: ${TIMESCALE_URL:jdbc:postgresql://localhost:5432/market}
+      driver-class-name: org.postgresql.Driver
+      username: ${TIMESCALE_USER:postgres}
+      password: ${TIMESCALE_PASS:postgres}
+    clickhouse:
+      url: ${CLICKHOUSE_URL:jdbc:clickhouse://localhost:8123/market}
+      driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+      username: ${CLICKHOUSE_USER:default}
+      password: ${CLICKHOUSE_PASS:}
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
@@ -33,11 +39,29 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
   metrics:
     export:
       prometheus:
         enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        http.client.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+        http.client.requests: 0.5, 0.95, 0.99
   tracing:
     sampling:
       probability: 1.0

@@ -1,0 +1,349 @@
+# Default values for kline-analytics
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Image configuration
+image:
+  repository: kline-analytics
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 3000
+  fsGroup: 2000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+    - ALL
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kline-analytics.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Resource configuration
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Java heap configuration
+java:
+  heap:
+    initial: "512m"
+    maximum: "1g"
+  gc:
+    type: "G1GC"
+    options: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+
+# Environment-specific overrides
+environments:
+  development:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    java:
+      heap:
+        initial: "256m"
+        maximum: "512m"
+    replicas: 1
+    
+  staging:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    java:
+      heap:
+        initial: "512m"
+        maximum: "1g"
+    replicas: 2
+    
+  production:
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+    java:
+      heap:
+        initial: "1g"
+        maximum: "2g"
+    replicas: 3
+    
+  canary:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    java:
+      heap:
+        initial: "512m"
+        maximum: "1g"
+    replicas: 1
+
+# Replica count
+replicaCount: 1
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Pod anti-affinity
+podAntiAffinity:
+  enabled: true
+  type: "soft" # soft or hard
+  topologyKey: "kubernetes.io/hostname"
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Health checks
+healthChecks:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+    path: /actuator/health/liveness
+  readiness:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    path: /actuator/health/readiness
+  startup:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 12
+    path: /actuator/health/readiness
+
+# Graceful shutdown
+gracefulShutdown:
+  enabled: true
+  terminationGracePeriodSeconds: 30
+  preStop:
+    enabled: true
+    command: ["/bin/sh", "-c", "sleep 15"]
+
+# Environment variables
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "prod"
+  - name: JAVA_OPTS
+    value: "-Xms{{ .Values.java.heap.initial }} -Xmx{{ .Values.java.heap.maximum }} -XX:+UseG1GC"
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector:4318"
+
+# ConfigMap
+configMap:
+  enabled: true
+  data:
+    application.yml: |
+      server:
+        port: 8080
+      spring:
+        application:
+          name: kline-analytics
+      management:
+        endpoints:
+          web:
+            exposure:
+              include: health,info,prometheus,metrics
+        endpoint:
+          health:
+            show-details: always
+            probes:
+              enabled: true
+        health:
+          livenessstate:
+            enabled: true
+          readinessstate:
+            enabled: true
+
+# Secrets
+secrets:
+  enabled: true
+  data: {}
+
+# Network policy
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 4318
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /actuator/prometheus
+    labels: {}
+  prometheusRule:
+    enabled: true
+    rules: []
+
+# Logging
+logging:
+  enabled: true
+  level: INFO
+  format: json
+  sampling:
+    enabled: true
+    rate: 0.1
+  retention:
+    days: 30
+  anonymization:
+    enabled: true
+    fields:
+      - "password"
+      - "token"
+      - "secret"
+
+# Backup
+backup:
+  enabled: true
+  schedule: "0 2 * * *" # Daily at 2 AM
+  retention: 7 # days
+  storage:
+    type: "s3"
+    bucket: "kline-analytics-backups"
+    region: "us-west-2"
+  concurrency: 3
+  validation:
+    enabled: true
+    checksum: true
+
+# Dependencies
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: true
+      size: 20Gi
+  alertmanager:
+    enabled: true
+    persistentVolume:
+      enabled: true
+      size: 10Gi
+
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  persistence:
+    enabled: true
+    size: 10Gi
+  dashboards:
+    default:
+      kline-analytics:
+        gnetId: 0
+        revision: 0
+        datasource: Prometheus
+
+elasticsearch:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 30Gi
+
+kibana:
+  enabled: true
+  replicas: 1
+  elasticsearchHosts: "http://elasticsearch-master:9200"

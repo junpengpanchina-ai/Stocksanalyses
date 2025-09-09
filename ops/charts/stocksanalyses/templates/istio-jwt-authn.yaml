@@ -1,0 +1,51 @@
+{{- if .Values.istio.jwt.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-jwt
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: {{ .Values.istio.rateLimit.gatewaySelector.istio | quote }}
+  jwtRules:
+    - issuer: {{ .Values.istio.jwt.issuer | quote }}
+      jwksUri: {{ .Values.istio.jwt.jwksUri | quote }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-jwt-headers
+  namespace: istio-system
+spec:
+  workloadSelector:
+    labels:
+      istio: {{ .Values.istio.rateLimit.gatewaySelector.istio | quote }}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener: { filterChain: { filter: { name: envoy.filters.network.http_connection_manager }}}
+      patch:
+        operation: INSERT_AFTER
+        value:
+          name: envoy.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_request(handle)
+                local headers = handle:headers()
+                local claims = handle:streamInfo():dynamicMetadata():get("envoy.filters.http.jwt_authn") or {}
+                local claimToHeaders = {
+                {{- range .Values.istio.jwt.claimToHeaders }}
+                  { claim = "{{ .claim }}", header = "{{ .header }}" },
+                {{- end }}
+                }
+                for _, map in ipairs(claimToHeaders) do
+                  local val = nil
+                  if claims and claims[map.claim] then val = tostring(claims[map.claim]) end
+                  if val ~= nil then headers:replace(map.header, val) end
+                end
+              end
+{{- end }}
+

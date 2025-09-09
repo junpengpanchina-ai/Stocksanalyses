@@ -1,0 +1,179 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-backup
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.backup.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "kline-analytics.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "kline-analytics.fullname" . }}-backup
+          containers:
+          - name: backup
+            image: postgres:13-alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              # Configuration
+              BACKUP_DIR="/backup"
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="kline_analytics_backup_${TIMESTAMP}.sql"
+              COMPRESSED_FILE="${BACKUP_FILE}.gz"
+              
+              # Create backup directory
+              mkdir -p ${BACKUP_DIR}
+              
+              # Database backup
+              echo "Starting database backup..."
+              pg_dump \
+                --host=${DB_HOST} \
+                --port=${DB_PORT} \
+                --username=${DB_USER} \
+                --dbname=${DB_NAME} \
+                --verbose \
+                --clean \
+                --if-exists \
+                --create \
+                --format=plain \
+                --file=${BACKUP_DIR}/${BACKUP_FILE}
+              
+              # Compress backup
+              echo "Compressing backup..."
+              gzip ${BACKUP_DIR}/${BACKUP_FILE}
+              
+              # Calculate checksum
+              echo "Calculating checksum..."
+              CHECKSUM=$(sha256sum ${BACKUP_DIR}/${COMPRESSED_FILE} | cut -d' ' -f1)
+              echo "${CHECKSUM}  ${COMPRESSED_FILE}" > ${BACKUP_DIR}/${COMPRESSED_FILE}.sha256
+              
+              # Upload to S3
+              echo "Uploading to S3..."
+              aws s3 cp ${BACKUP_DIR}/${COMPRESSED_FILE} s3://${S3_BUCKET}/backups/${COMPRESSED_FILE}
+              aws s3 cp ${BACKUP_DIR}/${COMPRESSED_FILE}.sha256 s3://${S3_BUCKET}/backups/${COMPRESSED_FILE}.sha256
+              
+              # Cleanup old backups
+              echo "Cleaning up old backups..."
+              aws s3 ls s3://${S3_BUCKET}/backups/ --recursive | \
+                grep "kline_analytics_backup_" | \
+                sort -r | \
+                tail -n +$(({{ .Values.backup.retention }} + 1)) | \
+                awk '{print $4}' | \
+                xargs -I {} aws s3 rm s3://${S3_BUCKET}/{}
+              
+              echo "Backup completed successfully"
+            env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-db-secret
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-db-secret
+                  key: port
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-db-secret
+                  key: username
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-db-secret
+                  key: database
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-db-secret
+                  key: password
+            - name: S3_BUCKET
+              value: "{{ .Values.backup.storage.bucket }}"
+            - name: AWS_DEFAULT_REGION
+              value: "{{ .Values.backup.storage.region }}"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-s3-secret
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kline-analytics.fullname" . }}-s3-secret
+                  key: secret-access-key
+            resources:
+              limits:
+                cpu: 500m
+                memory: 512Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+          volumes:
+          - name: backup-storage
+            emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-backup
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-backup
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-backup
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kline-analytics.fullname" . }}-backup
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kline-analytics.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-s3-secret
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+type: Opaque
+data:
+  access-key-id: {{ .Values.backup.storage.accessKeyId | b64enc }}
+  secret-access-key: {{ .Values.backup.storage.secretAccessKey | b64enc }}
+{{- end }}

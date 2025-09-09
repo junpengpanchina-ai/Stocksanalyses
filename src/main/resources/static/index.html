@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Matching Demo</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .row { display: flex; gap: 20px; }
+    table { border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 4px 8px; }
+    #fills { height: 240px; overflow-y: auto; width: 420px; border: 1px solid #ddd; padding: 6px; }
+    .fill-buy { color: #0b8b3c; }
+    .fill-sell { color: #c0392b; }
+  </style>
+</head>
+<body>
+  <h2>Matching Demo</h2>
+  <div>
+    <label>Instrument <input id="instrument" value="BTCUSDT"/></label>
+    <label>Account <input id="accountId" value="acc1"/></label>
+  </div>
+  <div>
+    <label>Side
+      <select id="side"><option>BUY</option><option>SELL</option></select>
+    </label>
+    <label>Type
+      <select id="type">
+        <option>LIMIT</option><option>MARKET</option><option>ICEBERG</option>
+      </select>
+    </label>
+    <label>TIF
+      <select id="tif"><option>GTC</option><option>IOC</option><option>FOK</option></select>
+    </label>
+    <label>Price <input id="price" type="number"/></label>
+    <label>Qty <input id="qty" type="number" value="5"/></label>
+    <label>DisplayQty <input id="displayQty" type="number"/></label>
+    <label>Protection <input id="protection" type="number"/></label>
+    <button onclick="placeOrder()">Place</button>
+  </div>
+  <div>
+    <label>Tick Price <input id="tick" type="number"/></label>
+    <button onclick="sendTick()">Send Tick</button>
+  </div>
+
+  <div class="row">
+    <div>
+      <h3>Order Book</h3>
+      <button onclick="refreshBook()">Refresh</button>
+      <div class="row">
+        <div>
+          <h4>Bids</h4>
+          <table id="bids"><tr><th>Price</th><th>Size</th></tr></table>
+        </div>
+        <div>
+          <h4>Asks</h4>
+          <table id="asks"><tr><th>Price</th><th>Size</th></tr></table>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3>Fills</h3>
+      <ul id="fills"></ul>
+    </div>
+  </div>
+
+  <div style="margin-top:20px">
+    <h3>Depth</h3>
+    <canvas id="depth" width="800" height="260"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    let stomp;
+    let depthChart;
+    function connectWS() {
+      const sock = new SockJS('/ws');
+      stomp = Stomp.over(sock);
+      stomp.debug = null;
+      stomp.connect({}, () => {
+        subscribeTopics();
+      });
+    }
+    function subscribeTopics() {
+      const inst = document.getElementById('instrument').value;
+      stomp.subscribe(`/topic/book/${inst}`, m => {
+        const data = JSON.parse(m.body);
+        renderTable('bids', data.bids);
+        renderTable('asks', data.asks);
+        renderDepth(data);
+      });
+      stomp.subscribe(`/topic/fills/${inst}`, m => {
+        const data = JSON.parse(m.body);
+        const ul = document.getElementById('fills');
+        data.fills.forEach(f => {
+          const li = document.createElement('li');
+          li.textContent = `${data.instrument} @${f.price} x${f.quantity} (${f.takerSide})`;
+          li.className = f.takerSide === 'BUY' ? 'fill-buy' : 'fill-sell';
+          ul.prepend(li);
+        });
+      });
+    }
+    async function placeOrder() {
+      const body = {
+        orderId: 'O' + Date.now(),
+        instrument: document.getElementById('instrument').value,
+        accountId: document.getElementById('accountId').value,
+        side: document.getElementById('side').value,
+        type: document.getElementById('type').value,
+        tif: document.getElementById('tif').value,
+        price: numOrNull('price'),
+        stopPrice: null,
+        displayQty: numOrNull('displayQty'),
+        priceProtection: numOrNull('protection'),
+        quantity: Number(document.getElementById('qty').value)
+      };
+      await fetch('/matching/order', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    }
+    async function sendTick() {
+      const instrument = document.getElementById('instrument').value;
+      const lastPrice = Number(document.getElementById('tick').value);
+      await fetch('/matching/tick', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({instrument, lastPrice})});
+    }
+    async function refreshBook() {
+      const instrument = document.getElementById('instrument').value;
+      const res = await fetch('/matching/book/' + instrument);
+      const data = await res.json();
+      renderTable('bids', data.bids);
+      renderTable('asks', data.asks);
+      renderDepth(data);
+    }
+    function renderTable(id, levels) {
+      const el = document.getElementById(id);
+      el.innerHTML = '<tr><th>Price</th><th>Size</th></tr>' + levels.map(l => `<tr><td>${l.price}</td><td>${l.size}</td></tr>`).join('');
+    }
+    function renderDepth(data){
+      const bid = [...data.bids].sort((a,b)=>b.price-a.price).slice(0,20);
+      const ask = [...data.asks].sort((a,b)=>a.price-b.price).slice(0,20);
+      const labels = bid.map(b=>b.price).reverse().concat(ask.map(a=>a.price));
+      const bidCum = []; let acc=0; bid.slice().reverse().forEach(b=>{acc+=b.size; bidCum.push(acc);});
+      const askCum = []; acc=0; ask.forEach(a=>{acc+=a.size; askCum.push(acc);});
+      const ctx = document.getElementById('depth');
+      const cfg = {
+        type:'line', data:{ labels,
+          datasets:[
+            { label:'Bid', data: bidCum.concat(new Array(askCum.length).fill(null)), borderColor:'#0b8b3c', fill:false, tension:0 },
+            { label:'Ask', data: new Array(bidCum.length).fill(null).concat(askCum), borderColor:'#c0392b', fill:false, tension:0 }
+          ]
+        }, options:{ responsive:false, plugins:{legend:{display:true}}, scales:{x:{display:true}, y:{display:true}} }
+      };
+      if (depthChart) { depthChart.destroy(); }
+      depthChart = new Chart(ctx, cfg);
+    }
+    function numOrNull(id){ const v = document.getElementById(id).value; return v ? Number(v) : null; }
+    connectWS();
+  </script>
+</body>
+</html>
+
+

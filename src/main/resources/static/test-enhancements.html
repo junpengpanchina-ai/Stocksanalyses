@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frontend Enhancements Test</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="/js/param-validation.js"></script>
+  <script src="/js/multi-timeframe.js"></script>
+  <script src="/js/chart-visualization.js"></script>
+  <script src="/js/strategy-management.js"></script>
+  <script src="/js/reliability.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <h1>Frontend Enhancements Test</h1>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Parameter Validation Test</h3>
+      <div class="content">
+        <div class="kv">
+          <input id="testEmaShort" placeholder="EMA Short (1-200)" value="20" />
+          <input id="testEmaLong" placeholder="EMA Long (1-500)" value="50" />
+          <input id="testSymbol" placeholder="Symbol (A-Z0-9)" value="TEST" />
+          <select id="testInterval">
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+            <option value="4h">4h</option>
+            <option value="1d">1d</option>
+          </select>
+        </div>
+        <div id="validationResults"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Multi-Timeframe Test</h3>
+      <div class="content">
+        <div class="sync-controls">
+          <div class="sync-options">
+            <label><input type="checkbox" id="testCrosshairSync" checked /> Crosshair Sync</label>
+            <label><input type="checkbox" id="testZoomSync" checked /> Zoom Sync</label>
+            <label><input type="checkbox" id="testPanSync" checked /> Pan Sync</label>
+            <label><input type="checkbox" id="testTimeAlignment" checked /> Time Alignment</label>
+          </div>
+        </div>
+        <div id="syncStatus"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Chart Visualization Test</h3>
+      <div class="content">
+        <div id="testChart" style="height: 300px; border: 1px solid var(--border); border-radius: 8px;"></div>
+        <div class="enhanced-legend">
+          <div class="legend-header">
+            <h4>Test Signals</h4>
+          </div>
+          <div class="legend-items" id="testLegendItems"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Strategy Management Test</h3>
+      <div class="content">
+        <div class="strategy-tabs">
+          <button class="tab-btn active" data-tab="list">List</button>
+          <button class="tab-btn" data-tab="compare">Compare</button>
+        </div>
+        <div class="tab-content">
+          <div id="testStrategyList" class="tab-panel active">
+            <div class="strategy-list" id="testStrategyListContainer"></div>
+          </div>
+          <div id="testStrategyCompare" class="tab-panel">
+            <div class="compare-container">
+              <div class="compare-side">
+                <h4>Version A</h4>
+                <select id="testCompareVersionA" class="strategy-select">
+                  <option value="test1">Test Strategy 1</option>
+                  <option value="test2">Test Strategy 2</option>
+                </select>
+              </div>
+              <div class="compare-side">
+                <h4>Version B</h4>
+                <select id="testCompareVersionB" class="strategy-select">
+                  <option value="test1">Test Strategy 1</option>
+                  <option value="test2">Test Strategy 2</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Reliability Test</h3>
+      <div class="content">
+        <div class="kv">
+          <button id="testSuccess" class="btn">Test Success Message</button>
+          <button id="testWarning" class="btn">Test Warning Message</button>
+          <button id="testError" class="btn">Test Error Message</button>
+          <button id="testFallback" class="btn">Test Fallback UI</button>
+        </div>
+        <div id="reliabilityStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 测试参数验证
+    function testParamValidation() {
+      const validator = new ParamValidator();
+      const results = document.getElementById('validationResults');
+      
+      const testParams = {
+        emaShort: document.getElementById('testEmaShort').value,
+        emaLong: document.getElementById('testEmaLong').value,
+        symbol: document.getElementById('testSymbol').value,
+        interval: document.getElementById('testInterval').value
+      };
+      
+      const validation = validator.validateAll(testParams);
+      
+      results.innerHTML = `
+        <div class="validation-result ${validation.valid ? 'success' : 'error'}">
+          ${validation.valid ? '✓ All parameters valid' : '✗ Validation errors found'}
+        </div>
+        ${!validation.valid ? Object.entries(validation.results).map(([key, result]) => 
+          !result.valid ? `<div class="param-error">${key}: ${result.errors.join(', ')}</div>` : ''
+        ).join('') : ''}
+      `;
+    }
+
+    // 测试多周期联动
+    function testMultiTimeframe() {
+      const status = document.getElementById('syncStatus');
+      const state = multiTimeframeManager.getSyncState();
+      
+      status.innerHTML = `
+        <div class="sync-status">
+          <p><strong>Sync State:</strong></p>
+          <ul>
+            <li>Linked: ${state.isLinked ? 'Yes' : 'No'}</li>
+            <li>Crosshair Sync: ${state.crosshairSync ? 'Yes' : 'No'}</li>
+            <li>Zoom Sync: ${state.zoomSync ? 'Yes' : 'No'}</li>
+            <li>Pan Sync: ${state.panSync ? 'Yes' : 'No'}</li>
+            <li>Time Alignment: ${state.timeAlignment ? 'Yes' : 'No'}</li>
+          </ul>
+        </div>
+      `;
+    }
+
+    // 测试图表可视化
+    function testChartVisualization() {
+      const chart = echarts.init(document.getElementById('testChart'));
+      
+      // 创建测试数据
+      const testData = [
+        ['2024-01-01', 100, 105, 95, 110],
+        ['2024-01-02', 110, 115, 105, 120],
+        ['2024-01-03', 120, 125, 115, 130],
+        ['2024-01-04', 130, 135, 125, 140],
+        ['2024-01-05', 140, 145, 135, 150]
+      ];
+      
+      const testSignals = [
+        { type: 'BUY', timestamp: '2024-01-02T00:00:00Z' },
+        { type: 'SELL', timestamp: '2024-01-04T00:00:00Z' },
+        { type: 'CLOSE', timestamp: '2024-01-05T00:00:00Z' }
+      ];
+      
+      const option = {
+        animation: false,
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: testData.map(v => v[0]) },
+        yAxis: { scale: true },
+        grid: { left: 40, right: 20, top: 20, bottom: 40 },
+        series: [
+          { type: 'candlestick', name: 'TEST', data: testData.map(v => v.slice(1)) },
+          { type: 'scatter', name: 'signals', data: testSignals.map(s => ({
+            name: s.type,
+            value: [s.timestamp.slice(0, 10), s.type === 'BUY' ? 1 : -1],
+            itemStyle: { color: s.type === 'BUY' ? '#26A69A' : '#EF5350' }
+          })) }
+        ]
+      };
+      
+      chart.setOption(option);
+      
+      // 创建信号图例
+      if (window.chartVisualization) {
+        window.chartVisualization.createSignalLegend(testSignals);
+      }
+    }
+
+    // 测试策略管理
+    function testStrategyManagement() {
+      const container = document.getElementById('testStrategyListContainer');
+      
+      const testStrategies = [
+        { id: 'test1', name: 'Test Strategy 1', version: '1.0.0', status: 'active' },
+        { id: 'test2', name: 'Test Strategy 2', version: '2.0.0', status: 'inactive' }
+      ];
+      
+      container.innerHTML = testStrategies.map(strategy => `
+        <div class="strategy-item ${strategy.status}">
+          <div class="strategy-info">
+            <div class="strategy-name">
+              <h4>${strategy.name}</h4>
+              <span class="strategy-id">${strategy.id}</span>
+            </div>
+            <div class="strategy-meta">
+              <span class="version">v${strategy.version}</span>
+              <span class="status ${strategy.status}">${strategy.status}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 测试可靠性
+    function testReliability() {
+      const status = document.getElementById('reliabilityStatus');
+      
+      status.innerHTML = `
+        <div class="reliability-status">
+          <p><strong>Reliability Features:</strong></p>
+          <ul>
+            <li>Enhanced retry mechanism with jitter</li>
+            <li>Circuit breaker pattern</li>
+            <li>Global error handling</li>
+            <li>Fallback UI support</li>
+            <li>4xx/5xx error differentiation</li>
+          </ul>
+        </div>
+      `;
+    }
+
+    // 绑定测试事件
+    document.addEventListener('DOMContentLoaded', function() {
+      // 参数验证测试
+      ['testEmaShort', 'testEmaLong', 'testSymbol', 'testInterval'].forEach(id => {
+        document.getElementById(id).addEventListener('input', testParamValidation);
+      });
+      
+      // 多周期联动测试
+      ['testCrosshairSync', 'testZoomSync', 'testPanSync', 'testTimeAlignment'].forEach(id => {
+        document.getElementById(id).addEventListener('change', testMultiTimeframe);
+      });
+      
+      // 可靠性测试
+      document.getElementById('testSuccess').addEventListener('click', () => {
+        if (window.reliabilityManager) {
+          window.reliabilityManager.fallbackUI.showSuccess('Test success message');
+        }
+      });
+      
+      document.getElementById('testWarning').addEventListener('click', () => {
+        if (window.reliabilityManager) {
+          window.reliabilityManager.fallbackUI.showWarning('Test warning message');
+        }
+      });
+      
+      document.getElementById('testError').addEventListener('click', () => {
+        if (window.reliabilityManager) {
+          window.reliabilityManager.fallbackUI.showError('Test error message');
+        }
+      });
+      
+      document.getElementById('testFallback').addEventListener('click', () => {
+        if (window.reliabilityManager) {
+          window.reliabilityManager.fallbackUI.showFallbackUI();
+        }
+      });
+      
+      // 初始化测试
+      testParamValidation();
+      testMultiTimeframe();
+      testChartVisualization();
+      testStrategyManagement();
+      testReliability();
+    });
+  </script>
+</body>
+</html>

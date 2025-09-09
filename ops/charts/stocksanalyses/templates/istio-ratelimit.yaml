@@ -1,0 +1,68 @@
+{{- if .Values.istio.rateLimit.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-ratelimit-allow
+spec:
+  selector:
+    matchLabels:
+      istio: {{ .Values.istio.rateLimit.gatewaySelector.istio | quote }}
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            paths: ["{{ .Values.istio.rateLimit.routePrefix }}*"]
+---
+apiVersion: config.istio.io/v1alpha2
+kind: handler
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-rl-handler
+  namespace: istio-system
+spec:
+  compiledAdapter: envoy.rate_limit
+  params:
+    domain: api
+    rateLimits:
+      - actions:
+          - genericKey:
+              descriptorValue: api_rps
+---
+apiVersion: config.istio.io/v1alpha2
+kind: instance
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-rl-instance
+  namespace: istio-system
+spec:
+  compiledTemplate: quota
+  params:
+    dimensions:
+      descriptor_key: "api_rps"
+---
+apiVersion: config.istio.io/v1alpha2
+kind: rule
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-rl-rule
+  namespace: istio-system
+spec:
+  match: destination.labels["istio"] == "{{ .Values.istio.rateLimit.gatewaySelector.istio }}" && request.url_path.startsWith("{{ .Values.istio.rateLimit.routePrefix }}")
+  actions:
+    - handler: {{ include "stocksanalyses.fullname" . }}-rl-handler
+      instances:
+        - {{ include "stocksanalyses.fullname" . }}-rl-instance
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-rl-config
+  namespace: istio-system
+data:
+  config.yaml: |
+    domain: api
+    descriptors:
+      - key: generic_key
+        value: api_rps
+        rate_limit:
+          unit: {{ .Values.istio.rateLimit.unit }}
+          requests_per_unit: {{ .Values.istio.rateLimit.requestsPerUnit }}
+{{- end }}
+

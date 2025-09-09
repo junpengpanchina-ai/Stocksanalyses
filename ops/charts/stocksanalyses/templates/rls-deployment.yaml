@@ -1,0 +1,49 @@
+{{- if .Values.rls.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.rls.service.name }}
+  namespace: {{ .Values.rls.namespace }}
+spec:
+  replicas: {{ .Values.rls.replicas }}
+  selector:
+    matchLabels: { app: {{ .Values.rls.service.name }} }
+  template:
+    metadata:
+      labels: { app: {{ .Values.rls.service.name }} }
+    spec:
+      containers:
+        - name: rls
+          image: {{ .Values.rls.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.rls.service.port }}
+          env:
+            - name: GRPC_PORT
+              value: "{{ .Values.rls.service.port }}"
+            - name: RUNTIME_ROOT
+              value: "/data"
+            - name: RUNTIME_SUBDIRECTORY
+              value: "ratelimit"
+          volumeMounts:
+            - name: rls-config
+              mountPath: /data/ratelimit/config
+      volumes:
+        - name: rls-config
+          configMap:
+            name: {{ .Values.rls.service.name }}-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.rls.service.name }}
+  namespace: {{ .Values.rls.namespace }}
+spec:
+  selector: { app: {{ .Values.rls.service.name }} }
+  ports:
+    - name: grpc
+      port: {{ .Values.rls.service.port }}
+      targetPort: grpc
+{{- end }}
+

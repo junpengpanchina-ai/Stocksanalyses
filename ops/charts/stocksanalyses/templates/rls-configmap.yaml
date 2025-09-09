@@ -1,0 +1,52 @@
+{{- if .Values.rls.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.rls.service.name }}-config
+  namespace: {{ .Values.rls.namespace }}
+data:
+  config.yaml: |
+    domain: {{ .Values.istio.rateLimit.v3.domain }}
+    descriptors:
+      # tenant-first hierarchy
+      - key: tenant
+        descriptors:
+        {{- range $t := .Values.rls.hierarchy.tenants }}
+          - value: {{ $t.tenant | quote }}
+            rate_limit:
+              unit: {{ $t.rate.unit }}
+              requests_per_unit: {{ $t.rate.requestsPerUnit }}
+            descriptors:
+              - key: user
+                descriptors:
+                {{- range $u := ($t.users | default (list)) }}
+                  - value: {{ $u.user | quote }}
+                    rate_limit:
+                      unit: {{ $u.rate.unit }}
+                      requests_per_unit: {{ $u.rate.requestsPerUnit }}
+                {{- end }}
+              - key: strategy
+                descriptors:
+                {{- range $s := ($t.strategies | default (list)) }}
+                  - value: {{ $s.strategy | quote }}
+                    rate_limit:
+                      unit: {{ $s.rate.unit }}
+                      requests_per_unit: {{ $s.rate.requestsPerUnit }}
+                {{- end }}
+              - key: method
+                descriptors:
+                {{- range $m := ($t.methods | default (list)) }}
+                  - value: {{ $m.method | quote }}
+                    rate_limit:
+                      unit: {{ $m.rate.unit }}
+                      requests_per_unit: {{ $m.rate.requestsPerUnit }}
+                {{- end }}
+        {{- end }}
+      # fallback global
+      - key: generic_key
+        value: global
+        rate_limit:
+          unit: {{ .Values.rls.hierarchy.global.rate.unit }}
+          requests_per_unit: {{ .Values.rls.hierarchy.global.rate.requestsPerUnit }}
+{{- end }}
+

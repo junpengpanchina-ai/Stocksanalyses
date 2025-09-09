@@ -26,7 +26,7 @@ public class TimescaleDBProvider implements MarketDataProvider {
     private final Map<String, DataAvailability> availabilityCache = new ConcurrentHashMap<>();
     private final Map<String, DataQuality> qualityCache = new ConcurrentHashMap<>();
     
-    public TimescaleDBProvider(@Autowired(required = false) JdbcTemplate jdbcTemplate,
+    public TimescaleDBProvider(@Autowired(required = false) @org.springframework.beans.factory.annotation.Qualifier("timescaleJdbcTemplate") JdbcTemplate jdbcTemplate,
                                @Autowired(required = false) CorporateActionsService corporateActionsService,
                                @Value("${marketdata.timescale.table:candles}") String tableName) {
         this.jdbcTemplate = jdbcTemplate;

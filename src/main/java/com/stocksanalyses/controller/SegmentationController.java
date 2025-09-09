@@ -1,6 +1,8 @@
 package com.stocksanalyses.controller;
 
 import com.stocksanalyses.service.SegmentationClient;
+import com.stocksanalyses.service.SegmentationSettings;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,9 +14,11 @@ import java.util.Map;
 public class SegmentationController {
 
     private final SegmentationClient segmentationClient;
+    private final SegmentationSettings segmentationSettings;
 
-    public SegmentationController(SegmentationClient segmentationClient) {
+    public SegmentationController(SegmentationClient segmentationClient, @Autowired SegmentationSettings segmentationSettings) {
         this.segmentationClient = segmentationClient;
+        this.segmentationSettings = segmentationSettings;
     }
 
     @GetMapping("/config")
@@ -36,11 +40,14 @@ public class SegmentationController {
     @PostMapping("/config")
     public ResponseEntity<Map<String, String>> updateConfig(@RequestBody Map<String, Object> settings) {
         try {
-            // Note: In a real implementation, you'd need to restart the application or use @ConfigurationProperties
-            // For now, this is read-only to show the intended interface
+            if (settings.containsKey("endpoint")) segmentationSettings.setEndpoint(String.valueOf(settings.get("endpoint")));
+            if (settings.containsKey("enabled")) segmentationSettings.setEnabled(Boolean.parseBoolean(String.valueOf(settings.get("enabled"))));
+            if (settings.containsKey("forceSegmentation")) segmentationSettings.setForceSegmentation(Boolean.parseBoolean(String.valueOf(settings.get("forceSegmentation"))));
+            if (settings.containsKey("forceGeometry")) segmentationSettings.setForceGeometry(Boolean.parseBoolean(String.valueOf(settings.get("forceGeometry"))));
+            if (settings.containsKey("timeoutMs")) segmentationSettings.setTimeoutMs(Integer.parseInt(String.valueOf(settings.get("timeoutMs"))));
+            segmentationClient.updateSettings(segmentationSettings);
             Map<String, String> response = new HashMap<>();
-            response.put("message", "Configuration updated. Restart required for changes to take effect.");
-            response.put("note", "Use application.yml or environment variables to change seg.* settings");
+            response.put("message", "Segmentation settings updated and applied");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, String> response = new HashMap<>();

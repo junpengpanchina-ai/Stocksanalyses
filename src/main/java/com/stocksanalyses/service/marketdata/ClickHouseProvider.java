@@ -26,7 +26,7 @@ public class ClickHouseProvider implements MarketDataProvider {
     private final Map<String, DataAvailability> availabilityCache = new ConcurrentHashMap<>();
     private final Map<String, DataQuality> qualityCache = new ConcurrentHashMap<>();
     
-    public ClickHouseProvider(@Autowired(required = false) JdbcTemplate clickHouseTemplate,
+    public ClickHouseProvider(@Autowired(required = false) @org.springframework.beans.factory.annotation.Qualifier("clickhouseJdbcTemplate") JdbcTemplate clickHouseTemplate,
                               @Autowired(required = false) CorporateActionsService corporateActionsService,
                               @Value("${marketdata.clickhouse.table:candles}") String tableName) {
         this.clickHouseTemplate = clickHouseTemplate;

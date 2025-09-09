@@ -1,0 +1,19 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}-replay
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: replay
+              image: {{ .Values.backup.image }}
+              command: {{- toYaml .Values.backup.command | nindent 14 }}
+              args: {{- toYaml .Values.backup.args | nindent 14 }}
+{{- end }}
+

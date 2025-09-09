@@ -1,0 +1,38 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-monitor
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kline-analytics.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: http
+    path: {{ .Values.monitoring.serviceMonitor.path }}
+    interval: {{ .Values.monitoring.serviceMonitor.interval }}
+    scrapeTimeout: 30s
+    honorLabels: true
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'kline_analytics_.*'
+      targetLabel: __name__
+      replacement: '${1}'
+    - sourceLabels: [__name__]
+      regex: 'http_server_requests_seconds_.*'
+      targetLabel: __name__
+      replacement: 'kline_analytics_http_requests_duration_seconds'
+    - sourceLabels: [__name__]
+      regex: 'jvm_memory_used_bytes'
+      targetLabel: __name__
+      replacement: 'kline_analytics_jvm_memory_used_bytes'
+    - sourceLabels: [__name__]
+      regex: 'jvm_gc_pause_seconds_.*'
+      targetLabel: __name__
+      replacement: 'kline_analytics_jvm_gc_pause_seconds'
+{{- end }}

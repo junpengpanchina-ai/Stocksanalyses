@@ -113,7 +113,9 @@ public class CorporateActionsService {
         BigDecimal coefficient = BigDecimal.ONE;
         
         for (CorporateAction action : actions) {
-            if (action.actionDate.isAfter(date)) {
+            // Use ex-date if present, otherwise action_date
+            java.time.LocalDate effectiveDate = action.exDate != null ? action.exDate : action.actionDate;
+            if (effectiveDate.isAfter(date)) {
                 continue; // Action happens after this date
             }
             
@@ -133,11 +135,13 @@ public class CorporateActionsService {
             case STOCK_DIVIDEND:
                 if (adjustType == AdjustType.BACK) {
                     // Backward adjustment: multiply by (1 + dividend/price)
-                    BigDecimal dividendYield = action.price.divide(action.ratio, MathContext.DECIMAL64);
+                    BigDecimal base = action.ratio.compareTo(BigDecimal.ZERO)==0? BigDecimal.ONE: action.ratio;
+                    BigDecimal dividendYield = action.price.divide(base, MathContext.DECIMAL64);
                     return BigDecimal.ONE.add(dividendYield, MathContext.DECIMAL64);
                 } else {
                     // Forward adjustment: divide by (1 + dividend/price)
-                    BigDecimal dividendYield = action.price.divide(action.ratio, MathContext.DECIMAL64);
+                    BigDecimal base = action.ratio.compareTo(BigDecimal.ZERO)==0? BigDecimal.ONE: action.ratio;
+                    BigDecimal dividendYield = action.price.divide(base, MathContext.DECIMAL64);
                     return BigDecimal.ONE.divide(BigDecimal.ONE.add(dividendYield, MathContext.DECIMAL64), MathContext.DECIMAL64);
                 }
                 

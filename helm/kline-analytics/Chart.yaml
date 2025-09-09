@@ -1,0 +1,34 @@
+apiVersion: v2
+name: kline-analytics
+description: KLine Analytics Trading System
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - trading
+  - analytics
+  - kline
+  - stock
+home: https://github.com/your-org/kline-analytics
+sources:
+  - https://github.com/your-org/kline-analytics
+maintainers:
+  - name: DevOps Team
+    email: devops@your-org.com
+dependencies:
+  - name: prometheus
+    version: 19.0.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled
+  - name: grafana
+    version: 6.50.0
+    repository: https://grafana.github.io/helm-charts
+    condition: grafana.enabled
+  - name: elasticsearch
+    version: 19.0.0
+    repository: https://helm.elastic.co
+    condition: elasticsearch.enabled
+  - name: kibana
+    version: 7.17.0
+    repository: https://helm.elastic.co
+    condition: kibana.enabled

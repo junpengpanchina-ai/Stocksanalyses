@@ -1,0 +1,60 @@
+{{- if .Values.podSecurityPolicy.enabled }}
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-psp
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'
+  readOnlyRootFilesystem: true
+  allowedHostPaths:
+    - pathPrefix: "/tmp"
+      readOnly: false
+    - pathPrefix: "/app/logs"
+      readOnly: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-psp
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - {{ include "kline-analytics.fullname" . }}-psp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-psp
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "kline-analytics.fullname" . }}-psp
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kline-analytics.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

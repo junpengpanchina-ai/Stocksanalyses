@@ -1,0 +1,207 @@
+{{- if .Values.monitoring.blackbox.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-blackbox-config
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 5s
+        http:
+          valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+          valid_status_codes: [200, 201, 202, 204]
+          method: GET
+          headers:
+            User-Agent: "Blackbox Exporter"
+          no_follow_redirects: false
+          fail_if_ssl: false
+          fail_if_not_ssl: false
+          preferred_ip_protocol: "ip4"
+          body_regex_match: []
+          body_regex_not_match: []
+          header_match: []
+          header_not_match: []
+          tls_config:
+            insecure_skip_verify: false
+          basic_auth:
+            username: ""
+            password: ""
+          bearer_token: ""
+          proxy_url: ""
+          proxy_connect_headers:
+            User-Agent: "Blackbox Exporter"
+          fail_if_body_matches_regexp: []
+          fail_if_body_not_matches_regexp: []
+          fail_if_header_matches_regexp: []
+          fail_if_header_not_matches_regexp: []
+          fail_if_ssl: false
+          fail_if_not_ssl: false
+          tls_config:
+            insecure_skip_verify: false
+          preferred_ip_protocol: "ip4"
+          ip_protocol_fallback: true
+          body_regex_match: []
+          body_regex_not_match: []
+          header_match: []
+          header_not_match: []
+          http_post_2xx:
+            prober: http
+            timeout: 5s
+            http:
+              method: POST
+              headers:
+                Content-Type: application/json
+              body: '{"query": "up"}'
+              valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+              valid_status_codes: [200, 201, 202, 204]
+              no_follow_redirects: false
+              fail_if_ssl: false
+              fail_if_not_ssl: false
+              preferred_ip_protocol: "ip4"
+              tls_config:
+                insecure_skip_verify: false
+              basic_auth:
+                username: ""
+                password: ""
+              bearer_token: ""
+              proxy_url: ""
+              proxy_connect_headers:
+                User-Agent: "Blackbox Exporter"
+              fail_if_body_matches_regexp: []
+              fail_if_body_not_matches_regexp: []
+              fail_if_header_matches_regexp: []
+              fail_if_header_not_matches_regexp: []
+              tls_config:
+                insecure_skip_verify: false
+              preferred_ip_protocol: "ip4"
+              ip_protocol_fallback: true
+              body_regex_match: []
+              body_regex_not_match: []
+              header_match: []
+              header_not_match: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-blackbox
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kline-analytics.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "kline-analytics.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: blackbox-exporter
+    spec:
+      containers:
+      - name: blackbox-exporter
+        image: prom/blackbox-exporter:latest
+        ports:
+        - containerPort: 9115
+          name: http
+        args:
+        - --config.file=/etc/blackbox_exporter/blackbox.yml
+        - --web.listen-address=:9115
+        volumeMounts:
+        - name: config
+          mountPath: /etc/blackbox_exporter
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "kline-analytics.fullname" . }}-blackbox-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-blackbox
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+spec:
+  selector:
+    {{- include "kline-analytics.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+  ports:
+  - name: http
+    port: 9115
+    targetPort: http
+    protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-blackbox-monitor
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blackbox-exporter
+spec:
+  selector:
+    matchLabels:
+      {{- include "kline-analytics.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: blackbox-exporter
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kline-analytics.fullname" . }}-blackbox-rules
+  labels:
+    {{- include "kline-analytics.labels" . | nindent 4 }}
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+  - name: kline-analytics.blackbox
+    rules:
+    - alert: KlineAnalyticsBlackboxProbeFailed
+      expr: probe_success{job="{{ include "kline-analytics.fullname" . }}-blackbox"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: kline-analytics
+      annotations:
+        summary: "Blackbox probe failed"
+        description: "Blackbox probe failed for {{ $labels.instance }} for more than 1 minute."
+        runbook_url: "https://wiki.company.com/runbooks/blackbox-probe-failed"
+    - alert: KlineAnalyticsBlackboxProbeSlow
+      expr: probe_duration_seconds{job="{{ include "kline-analytics.fullname" . }}-blackbox"} > 5
+      for: 2m
+      labels:
+        severity: warning
+        service: kline-analytics
+      annotations:
+        summary: "Blackbox probe slow"
+        description: "Blackbox probe duration is {{ $value }}s for {{ $labels.instance }}."
+{{- end }}

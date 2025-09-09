@@ -14,6 +14,8 @@ a{color:var(--accent);text-decoration:none}
 .btn{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;cursor:pointer}
 .btn:hover{border-color:var(--accent)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.chart{height:520px;border:1px solid var(--border);border-radius:8px}
 .card{background:linear-gradient(180deg, var(--panel), var(--panel-alt));border:1px solid var(--border);border-radius:10px;overflow:hidden}
 .card h3{margin:0;padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}
 .card .content{padding:14px}

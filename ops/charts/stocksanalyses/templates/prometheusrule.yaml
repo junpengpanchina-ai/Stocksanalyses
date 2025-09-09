@@ -1,0 +1,12 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stocksanalyses.fullname" . }}
+  labels:
+    release: {{ .Values.metrics.prometheusRelease | quote }}
+spec:
+  groups:
+  {{- toYaml .Values.metrics.prometheusRule.groups | nindent 2 }}
+{{- end }}
+

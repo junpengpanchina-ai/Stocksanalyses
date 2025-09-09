@@ -1,0 +1,197 @@
+replicaCount: 2
+
+image:
+  repository: your-registry/stocksanalyses
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: nginx
+  hosts:
+    - host: stocks.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+env:
+  - name: JAVA_OPTS
+    value: "-Xms256m -Xmx1024m"
+
+metrics:
+  enabled: true
+  prometheusRelease: prometheus
+  metricNames:
+    httpRequestsCount: http_server_requests_seconds_count
+    httpRequestsBucket: http_server_requests_seconds_bucket
+    jvmGcPauseSum: jvm_gc_pause_seconds_sum
+    jvmThreadsLive: jvm_threads_live
+    uptimeSeconds: process_uptime_seconds
+    systemCpuUsage: system_cpu_usage
+    jvmHeapUsedBytes: jvm_memory_used_bytes
+    queueBacklogTotal: app_queue_backlog_total
+    queueDepth: app_queue_depth
+    segClientErrors: segmentation_client_errors_total
+    segClientRequests: segmentation_client_requests_total
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  podMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: true
+    groups:
+      - name: stocksanalyses.rules
+        rules:
+          - alert: HighErrorRate
+            expr: sum(rate({{ .Values.metrics.metricNames.httpRequestsCount }}{outcome="SERVER_ERROR"}[5m])) > 5
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: High 5xx error rate
+      - name: stocksanalyses.jvm.rules
+        rules:
+          - alert: JVMGcPauseHigh
+            expr: max(rate({{ .Values.metrics.metricNames.jvmGcPauseSum }}[5m])) by (instance) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: JVM GC pause too high
+          - alert: JVMThreadsHigh
+            expr: {{ .Values.metrics.metricNames.jvmThreadsLive }}{job=~".+"} > 500
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: JVM live threads unusually high
+      - name: stocksanalyses.app.rules
+        rules:
+          - alert: RequestLatencyP95High
+            expr: histogram_quantile(0.95, sum(rate({{ .Values.metrics.metricNames.httpRequestsBucket }}[5m])) by (le)) > 0.8
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: HTTP p95 latency high
+          - alert: QueueBacklogGrowing
+            expr: increase({{ .Values.metrics.metricNames.queueBacklogTotal }}[10m]) > 100 or ({{ .Values.metrics.metricNames.queueDepth }} > 1000)
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: App queue backlog increasing (metric optional)
+          - alert: SegmentationDependencyDown
+            expr: (sum(rate({{ .Values.metrics.metricNames.segClientErrors }}[5m])) > 0) or absent({{ .Values.metrics.metricNames.segClientRequests }})
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: Segmentation service dependency failing or missing metrics
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  image: bitnami/kubectl:1.30
+  command: ["/bin/sh","-c"]
+  args: ["echo replay logic here"]
+
+bench:
+  enabled: false
+  vus: 20
+  duration: 3m
+
+istio:
+  rateLimit:
+    enabled: true
+    gatewaySelector:
+      istio: ingressgateway
+    requestsPerUnit: 100
+    unit: minute   # second|minute|hour
+    responseCode: 429
+    routePrefix: /api/
+    v3:
+      enabled: true
+      # Header to identify user/tenant; prefer an authenticated header from gateway/JWT filter
+      userHeader: x-user-id
+      tenantHeader: x-tenant-id
+      strategyHeader: x-strategy-id
+      methodHeader: ":method"
+      # Rate limit service DNS (Lyft Envoy Rate Limit Service compatible)
+      serviceHost: ratelimit.istio-system.svc.cluster.local
+      servicePort: 8081
+      domain: api
+
+  jwt:
+    enabled: true
+    # Envoy JWT authN provider to extract claims and map to headers for ratelimiting
+    issuer: https://auth.example.com/
+    jwksUri: https://auth.example.com/.well-known/jwks.json
+    # Map claims to headers for later ratelimit descriptors
+    claimToHeaders:
+      - claim: sub
+        header: x-user-id
+      - claim: tenant
+        header: x-tenant-id
+      - claim: strategy_id
+        header: x-strategy-id
+
+rls:
+  enabled: true
+  namespace: istio-system
+  image: envoyproxy/ratelimit:master
+  replicas: 1
+  service:
+    name: ratelimit
+    port: 8081
+  # Hierarchical limits with tenant-first priority, fallback to global
+  hierarchy:
+    tenantFirst: true
+    tenants:
+      - tenant: "tenantA"
+        rate:
+          unit: minute
+          requestsPerUnit: 200
+        users:
+          - user: "*"
+            rate: { unit: minute, requestsPerUnit: 150 }
+        strategies:
+          - strategy: "default-ema-macd"
+            rate: { unit: minute, requestsPerUnit: 50 }
+        methods:
+          - method: "GET"
+            rate: { unit: minute, requestsPerUnit: 120 }
+      - tenant: "*"
+        rate: { unit: minute, requestsPerUnit: 120 }
+    global:
+      rate: { unit: minute, requestsPerUnit: 100 }
+

@@ -54,6 +54,17 @@ public class StrategyEngine {
             }
         }
 
+        // Guard rails: coerce defaults when invalid (defensive against malformed configs)
+        emaShort = Math.max(1, Math.min(500, emaShort));
+        emaLong = Math.max(1, Math.min(500, emaLong));
+        fast = Math.max(1, Math.min(200, fast));
+        slow = Math.max(1, Math.min(400, slow));
+        signalPeriod = Math.max(1, Math.min(200, signalPeriod));
+        atrPeriod = Math.max(2, Math.min(200, atrPeriod));
+        atrMult = Math.max(0.1, Math.min(20.0, atrMult));
+        targetVol = Math.max(0.0, Math.min(1.0, targetVol));
+        minPatternScore = Math.max(0.0, Math.min(1.0, minPatternScore));
+
         double[] emaS = indicatorService.emaClose(candles, emaShort);
         double[] emaL = indicatorService.emaClose(candles, emaLong);
         double[] macd = indicatorService.macd(candles, fast, slow, signalPeriod);
