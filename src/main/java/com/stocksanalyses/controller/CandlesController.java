@@ -32,8 +32,8 @@ public class CandlesController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end,
             @RequestParam(defaultValue = "NONE") AdjustType adj
     ) {
-        var raw = candleService.getCandles(symbol, interval, start, end);
-        return adjuster.adjust(raw, adj);
+        // Use enhanced candle service with built-in adjustment
+        return candleService.getCandles(symbol, interval, start, end, adj);
     }
 }
 

@@ -91,3 +91,16 @@ seg:
     minPolygonPoints: 4       # minimum points in mask polygon
     maxPolygonPoints: 1000    # maximum points in mask polygon
 
+# Market Data Configuration
+marketdata:
+  primary-provider: timescale  # timescale, clickhouse
+  reconciliation:
+    enabled: true
+    tolerance: 0.01  # Price difference tolerance for reconciliation
+  timescale:
+    table: candles
+  clickhouse:
+    table: candles
+  corporate-actions:
+    table: corporate_actions
+
