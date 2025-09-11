@@ -11,6 +11,10 @@
   <script src="/js/chart-visualization.js"></script>
   <script src="/js/strategy-management.js"></script>
   <script src="/js/reliability.js"></script>
+  <script type="module">
+    import { runOfflineAnalysis } from '/js/analysis-offline.js';
+    window.__offlineAnalysis = { runOfflineAnalysis };
+  </script>
   <style>
     #chart{height:520px;border:1px solid var(--border);border-radius:8px}
     .panel{display:grid;grid-template-columns:2fr 1fr;gap:16px}
@@ -37,6 +41,11 @@
         <div class="content">
           <div class="kv" style="justify-content:space-between">
             <div class="kv">
+              <select id="market" style="width:90px">
+                <option value="US">US</option>
+                <option value="CN">CN</option>
+                <option value="HK">HK</option>
+              </select>
               <input id="symbol" placeholder="SYMBOL e.g. TEST" />
               <select id="interval"><option value="1d">1d</option><option value="1h">1h</option><option value="4h">4h</option><option value="15m">15m</option></select>
               <button class="primary" id="load">Load</button>
@@ -52,6 +61,8 @@
               <button class="btn" id="overlayBtn">Overlay</button>
               <label style="color:var(--muted)"><input id="overlayToggle" type="checkbox" checked /> overlay on</label>
               <label style="color:var(--muted)"><input id="linkTf" type="checkbox" checked /> link timeframes</label>
+              <input type="file" id="csvFile" accept=".csv,text/csv" />
+              <button class="btn" id="analyzeCsv">Analyze CSV (offline)</button>
             </div>
           </div>
           <div class="grid2">
@@ -70,6 +81,27 @@
                 <button class="btn" id="load2">Load</button>
               </div>
               <div id="chart2" class="chart"></div>
+              <div class="kv" style="margin-top:8px">
+                <button class="btn" id="btnSimulatePicks">Simulate Picks (Equal-Weight)</button>
+              </div>
+              <div id="perfChart" class="chart" style="height:280px;margin-top:8px"></div>
+              <div id="perfStats" class="mono" style="margin-top:6px"></div>
+              <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+                <button onclick="startDailyReplay()" class="btn">每日复盘</button>
+                <button onclick="exportBacktest()" class="btn">导出回测</button>
+                <label><input type="checkbox" id="enableTradingCosts" checked> 交易成本</label>
+                <label>换手周期: <input type="number" id="rebalanceDays" value="30" min="1" max="365" style="width:60px">天</label>
+              </div>
+              <div id="replayPanel" style="display:none;margin-top:8px;border:1px solid #ddd;padding:8px">
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                  <button onclick="prevDay()" class="btn">←</button>
+                  <span id="replayDate" class="mono"></span>
+                  <button onclick="nextDay()" class="btn">→</button>
+                  <button onclick="playReplay()" class="btn">播放</button>
+                  <button onclick="stopReplay()" class="btn">停止</button>
+                </div>
+                <div id="replayStats" class="mono" style="font-size:12px"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -103,6 +135,242 @@
     </div>
 
     <div class="card" style="margin-top:16px">
+      <h3>AI 面板（本地）</h3>
+      <div class="content">
+        <div class="kv" style="flex-wrap:wrap;gap:8px">
+          <select id="aiProvider">
+            <option value="ollama">ollama</option>
+            <option value="openai">openai</option>
+            <option value="lmstudio">lmstudio</option>
+            <option value="deepseek">deepseek</option>
+            <option value="volcengine">volcengine</option>
+            <option value="bailian">bailian</option>
+            <option value="siliconflow">siliconflow</option>
+            <option value="anythingllm">anythingllm</option>
+          </select>
+          <input id="aiModel" placeholder="model (e.g. qwen2.5:14b-instruct)" />
+          <input id="aiEndpoint" placeholder="endpoint (OpenAI-compatible)" style="width:360px" />
+          <input id="aiApiKey" placeholder="apiKey (optional)" />
+          <button class="btn" id="saveAi">Save</button>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <select id="promptType"><option value="sentiment">sentiment</option><option value="finance">finance</option><option value="screener">screener</option></select>
+          <button class="btn" id="btnLoadPrompt">载入模板</button>
+          <button class="btn" id="btnSavePrompt">保存模板</button>
+        </div>
+        <textarea id="promptEditor" class="mono" style="display:none;width:100%;height:140px" placeholder="编辑提示词模板"></textarea>
+
+        <div class="kv" style="margin-top:8px">
+          <label style="color:var(--muted)"><input type="checkbox" id="retrievalEnable" /> 启用检索</label>
+          <input id="retrievalRoot" placeholder="corpus root (默认 data/news)" style="width:260px" />
+          <button class="btn" id="btnRetrievalBuild">Build Index</button>
+          <input id="retrievalQuery" placeholder="检索查询" style="width:260px" />
+          <input id="retrievalTopK" placeholder="topK 5" />
+          <button class="btn" id="btnRetrievalSearch">Search</button>
+          <button class="btn" id="btnUseInSentiment">用到情绪</button>
+          <button class="btn" id="btnUseInScreener">用到选股</button>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <input type="file" id="sentFile" accept=".txt,.md,.json,.jsonl" />
+          <button class="primary" id="btnSentiment">情绪分析 (本地摘要)</button>
+          <input type="file" id="newsImportFile" accept=".txt,.md,.json,.jsonl" />
+          <input id="newsImportDate" placeholder="YYYY-MM-DD (可选)" />
+          <button class="btn" id="btnNewsImport">导入新闻到本地</button>
+          <button class="btn" id="btnDataStorage">数据存储</button>
+          <button class="btn" id="btnSecurity">安全管理</button>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <input id="aggUrls" placeholder="粘贴URL或RSS，逗号分隔" style="width:520px" />
+          <label style="color:var(--muted)"><input type="checkbox" id="aggRssOnly" checked /> 仅RSS</label>
+          <label style="color:var(--muted)"><input type="checkbox" id="aggDedupe" checked /> 去重</label>
+          <input id="aggKeywords" placeholder="关键词(逗号分隔)" style="width:240px" />
+          <button class="btn" id="btnAgg">聚合并批量情绪</button>
+          <button class="btn" id="btnListNews">列出今日</button>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <input id="screenUniverse" placeholder="universe, comma separated (e.g. AAPL,TSLA,MSFT)" style="width:420px" />
+          <input id="screenFactors" placeholder="factors (增长,护城河,现金流)" style="width:260px" />
+          <button class="btn" id="btnScreener">AI 选股</button>
+          <label style="margin-left:8px;color:var(--muted)"><input type="checkbox" id="alertsSubscribe" /> 订阅报警</label>
+        </div>
+        <div class="kv" style="margin-top:6px">
+          <div class="badge">Include:</div>
+          <div id="selInclude" class="kv"></div>
+          <div class="badge" style="margin-left:8px">Exclude:</div>
+          <div id="selExclude" class="kv"></div>
+          <button class="btn" id="btnClearSel">清空选择</button>
+        </div>
+        <div class="kv" style="margin-top:8px">
+          <input type="file" id="quotesCsv" accept=".csv" />
+          <input id="quotesSymbol" placeholder="SYMBOL" />
+          <input id="quotesMarket" placeholder="US|HK|CN (默认US)" />
+          <button class="btn" id="btnQuotesImport">导入行情CSV</button>
+          <button class="btn" id="btnLoadLocalQuotes">加载本地行情</button>
+          <button class="btn" id="btnOpenRules">打开规则</button>
+          <button class="btn" id="btnSaveRules">保存规则</button>
+        </div>
+        <textarea id="rulesEditor" class="mono" style="display:none;width:100%;height:160px"></textarea>
+        <div id="aiOut" class="mono" style="margin-top:8px;max-height:380px;overflow:auto"></div>
+        <div id="screenerControls" style="margin-top:8px;display:none">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" id="screenerFilter" placeholder="筛选股票代码/名称" style="flex:1;min-width:150px">
+            <select id="screenerSort">
+              <option value="score-desc">评分↓</option>
+              <option value="score-asc">评分↑</option>
+              <option value="symbol">代码</option>
+            </select>
+            <button onclick="exportScreenerCSV()" class="btn">导出CSV</button>
+          </div>
+          <div id="screenerTable" style="max-height:300px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>情绪分析</h3>
+      <div class="kv" style="margin:6px 0 12px 0;display:flex;gap:8px;align-items:center">
+        <label>预设:
+          <select id="sentimentPreset">
+            <option value="default">默认(综合)</option>
+            <option value="tech_fund_policy">技术/基本/政策</option>
+          </select>
+        </label>
+        <button class="btn" id="btnRecalcSentiment">重算图表</button>
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div style="flex:1">
+          <h4>情绪雷达图</h4>
+          <div id="sentimentRadar" class="chart" style="height:300px"></div>
+        </div>
+        <div style="flex:1">
+          <h4>情绪热力图</h4>
+          <div id="sentimentHeatmap" class="chart" style="height:300px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>报警历史</h3>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <button onclick="loadAlertsHistory()" class="btn">刷新</button>
+        <button onclick="clearAlertsHistory()" class="btn">清空</button>
+        <select id="alertFilter">
+          <option value="all">全部</option>
+          <option value="price">价格</option>
+          <option value="indicator">指标</option>
+          <option value="sentiment">情绪</option>
+        </select>
+        <input type="date" id="alertDateFrom" placeholder="开始日期">
+        <input type="date" id="alertDateTo" placeholder="结束日期">
+      </div>
+      <div id="alertsHistory" class="mono" style="max-height:400px;overflow-y:auto;border:1px solid #ddd;padding:8px"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>安全管理</h3>
+      <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div style="flex:1">
+          <h4>API Key管理</h4>
+          <div style="margin-bottom:8px">
+            <select id="securityProvider">
+              <option value="ollama">Ollama</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="volcengine">火山方舟</option>
+              <option value="bailian">百炼</option>
+            </select>
+            <input type="password" id="securityApiKey" placeholder="API Key" style="width:300px;margin:0 8px">
+            <button onclick="storeApiKey()" class="btn">存储</button>
+            <button onclick="checkApiKey()" class="btn">检查</button>
+            <button onclick="removeApiKey()" class="btn">删除</button>
+          </div>
+          <div id="securityStatus" class="mono" style="font-size:12px;color:#666"></div>
+        </div>
+        <div style="flex:1">
+          <h4>请求配额</h4>
+          <div id="rateLimitInfo" class="mono" style="font-size:12px;color:#666"></div>
+          <button onclick="refreshRateLimit()" class="btn" style="margin-top:8px">刷新</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div style="flex:1">
+          <h4>超时配置</h4>
+          <div style="margin-bottom:8px">
+            <select id="timeoutOperation">
+              <option value="ai.sentiment">情绪分析</option>
+              <option value="ai.screener">AI选股</option>
+              <option value="ai.retrieval">向量检索</option>
+              <option value="quotes.import">行情导入</option>
+              <option value="news.aggregate">资讯聚合</option>
+            </select>
+            <input type="number" id="timeoutMs" placeholder="超时(ms)" style="width:100px;margin:0 8px">
+            <input type="number" id="maxRetries" placeholder="重试次数" style="width:100px;margin:0 8px">
+            <button onclick="setTimeoutConfig()" class="btn">设置</button>
+            <button onclick="getTimeoutConfig()" class="btn">查询</button>
+          </div>
+          <div id="timeoutInfo" class="mono" style="font-size:12px;color:#666"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>数据存储管理</h3>
+      <div style="display:flex;gap:16px;margin-bottom:16px">
+        <div style="flex:1">
+          <h4>K线数据</h4>
+          <div style="margin-bottom:8px">
+            <select id="storageMarket">
+              <option value="cn">A股 (CN)</option>
+              <option value="hk">港股 (HK)</option>
+              <option value="us">美股 (US)</option>
+            </select>
+            <input type="text" id="storageSymbol" placeholder="股票代码" style="width:120px;margin:0 8px">
+            <input type="file" id="storageQuotesFile" accept=".csv" style="width:200px">
+            <label style="color:var(--muted)"><input type="checkbox" id="useParquet" checked /> Parquet格式</label>
+          </div>
+          <div style="margin-bottom:8px">
+            <button onclick="uploadQuotes()" class="btn">上传K线</button>
+            <button onclick="loadQuotes()" class="btn">加载K线</button>
+            <button onclick="migrateToParquet()" class="btn">迁移到Parquet</button>
+            <button onclick="listAvailableData()" class="btn">查看数据</button>
+          </div>
+          <div id="quotesStatus" class="mono" style="font-size:12px;color:#666"></div>
+        </div>
+        <div style="flex:1">
+          <h4>新闻数据</h4>
+          <div style="margin-bottom:8px">
+            <input type="date" id="newsDate" style="width:150px">
+            <input type="text" id="newsId" placeholder="新闻ID" style="width:120px;margin:0 8px">
+            <button onclick="loadNews()" class="btn">加载新闻</button>
+          </div>
+          <div id="newsStatus" class="mono" style="font-size:12px;color:#666"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div style="flex:1">
+          <h4>AI分析结果</h4>
+          <div style="margin-bottom:8px">
+            <select id="aiType">
+              <option value="sentiment">情绪分析</option>
+              <option value="finance">财报分析</option>
+              <option value="screener">选股结果</option>
+            </select>
+            <input type="text" id="aiSymbol" placeholder="股票代码" style="width:120px;margin:0 8px">
+            <input type="date" id="aiDate" style="width:150px">
+            <button onclick="loadAiResults()" class="btn">加载结果</button>
+          </div>
+          <div id="aiStatus" class="mono" style="font-size:12px;color:#666"></div>
+        </div>
+        <div style="flex:1">
+          <h4>数据统计</h4>
+          <div id="dataStats" class="mono" style="font-size:12px;color:#666">
+            点击"查看数据"获取统计信息
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <h3>Signal Inbox</h3>
       <div class="content" id="inbox">
         <div class="skeleton" style="width:100%"></div>
@@ -115,7 +383,16 @@
   <script>
     const chart = echarts.init(document.getElementById('chart'));
     const chart2 = echarts.init(document.getElementById('chart2'));
+    const perfChart = echarts.init(document.getElementById('perfChart'));
     const state = { symbol:'TEST', interval:'1d', interval2:'1h', candles:[], candles2:[], signals:[], overlayPrices:[], overlayCandles:[] };
+    const screenerSel = { include: new Set(), exclude: new Set() };
+    function refreshSelBadges(){
+      const inc = document.getElementById('selInclude');
+      const exc = document.getElementById('selExclude');
+      if (!inc || !exc) return;
+      inc.innerHTML = Array.from(screenerSel.include).map(s=>`<span class="badge">${s}</span>`).join('');
+      exc.innerHTML = Array.from(screenerSel.exclude).map(s=>`<span class="badge">${s}</span>`).join('');
+    }
     document.getElementById('symbol').value = state.symbol;
     document.getElementById('interval').value = state.interval;
     document.getElementById('interval2').value = state.interval2;
@@ -259,6 +536,16 @@
       await fetchCandles2(); renderChart2();
     };
     document.getElementById('apply').onclick = async ()=>{ saveParams(); await loadAll(); };
+    document.getElementById('analyzeCsv').onclick = async ()=>{
+      const el = document.getElementById('csvFile');
+      const file = el.files && el.files[0];
+      if (!file) { alert('Choose CSV with columns: time,open,high,low,close,volume'); return; }
+      const text = await file.text();
+      const { runOfflineAnalysis } = window.__offlineAnalysis || {};
+      if (!runOfflineAnalysis) { alert('offline module not loaded'); return; }
+      const res = runOfflineAnalysis({ text, chart });
+      document.getElementById('btout').textContent = JSON.stringify({ perf: res.perf, signals: res.signals.slice(-10) }, null, 2);
+    };
     document.getElementById('runbt').onclick = async ()=>{
       const body = { strategyConfig: { name:'dsl', params: {
         emaShort: +document.getElementById('emaShort').value || 20,
@@ -270,6 +557,22 @@
       const res = await fetch('/api/strategy/backtest', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
       const json = await res.json();
       document.getElementById('btout').textContent = JSON.stringify(json.metrics || json, null, 2);
+    };
+
+    document.getElementById('btnSimulatePicks').onclick = async ()=>{
+      // 简化：使用当前主图 symbol 的本地行情作为样本；真实应为 picks 多标的等权组合
+      const sym = document.getElementById('symbol').value || 'TEST';
+      const market = (document.getElementById('market')?.value || 'US').toLowerCase();
+      const url = `/api/quotes/${encodeURIComponent(market)}/${encodeURIComponent(sym)}`;
+      const res = await fetch(url);
+      const arr = await res.json();
+      if (!Array.isArray(arr) || arr.length===0){ alert('缺少本地行情'); return; }
+      const dates = arr.map(r=> r.timestamp);
+      const closes = arr.map(r=> +r.close);
+      const rets = closes.map((c,i)=> i? (c/closes[i-1]-1): 0);
+      const cum = []; let acc=1; for (const r of rets){ acc*= (1+r); cum.push(acc); }
+      const opt = { animation:false, tooltip:{trigger:'axis'}, xAxis:{type:'category', data: dates}, yAxis:{scale:true}, grid:{ left:40, right:20, top:20, bottom:40 }, series:[{ type:'line', name:'Equity', data: cum }] };
+      perfChart.setOption(opt);
     };
 
     // Overlay from upload: map pixel y to price: price = refPrice + (refY - y) * pricePerPx
@@ -323,6 +626,1231 @@
       } catch(e){ document.getElementById('strats').innerHTML = '<div class="error">Failed to load strategies. Retry later.</div>'; }
     }
     loadStrats();
+    // ===== AI Panel =====
+    (function initAi(){
+      const get = (k)=> localStorage.getItem('ai_'+k);
+      const set = (k,v)=> localStorage.setItem('ai_'+k, v||'');
+      const prov = document.getElementById('aiProvider');
+      const model = document.getElementById('aiModel');
+      const ep = document.getElementById('aiEndpoint');
+      const key = document.getElementById('aiApiKey');
+      prov.value = get('provider') || 'ollama';
+      model.value = get('model') || 'qwen2.5:14b-instruct';
+      ep.value = get('endpoint') || 'http://localhost:11434/v1/chat/completions';
+      key.value = get('apiKey') || '';
+      document.getElementById('saveAi').onclick = ()=>{ set('provider', prov.value); set('model', model.value); set('endpoint', ep.value); set('apiKey', key.value); alert('Saved'); };
+
+      document.getElementById('btnLoadPrompt').onclick = async ()=>{
+        const t = document.getElementById('promptType').value;
+        const res = await fetch('/api/prompts');
+        const obj = await res.json();
+        document.getElementById('promptEditor').style.display='block';
+        document.getElementById('promptEditor').value = obj[t] || '';
+      };
+      // ===== Retrieval UI =====
+      const retrievalState = { results: [] };
+      document.getElementById('btnRetrievalBuild').onclick = async ()=>{
+        const root = (document.getElementById('retrievalRoot').value||'').trim() || 'data/news';
+        const r = await fetch('/api/ai/retrieval/build', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ root }) });
+        const j = await r.json();
+        alert('Index built: '+ (j.root||root));
+      };
+      document.getElementById('btnRetrievalSearch').onclick = async ()=>{
+        const q = (document.getElementById('retrievalQuery').value||'').trim();
+        const k = parseInt(document.getElementById('retrievalTopK').value||'5', 10);
+        const r = await fetch('/api/ai/retrieval/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ q, k }) });
+        const j = await r.json();
+        retrievalState.results = Array.isArray(j.results)? j.results: [];
+        document.getElementById('aiOut').textContent = JSON.stringify(j, null, 2);
+      };
+      document.getElementById('btnUseInSentiment').onclick = async ()=>{
+        const f = document.getElementById('sentFile').files?.[0];
+        let text = '';
+        if (f) text = await f.text(); else text = 'No local summary file chosen.';
+        const enable = document.getElementById('retrievalEnable').checked;
+        const body = { scope:'market', market:(document.getElementById('market')?.value||'US'), symbols:[], summary: text };
+        if (enable && retrievalState.results?.length){
+          body.retrieve = retrievalState.results.map(r=> ({ snippet: r.snippet })).slice(0, 5);
+        }
+        const res = await fetch('/api/ai/sentiment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await res.json();
+        document.getElementById('aiOut').textContent = typeof j.result==='string'? j.result: JSON.stringify(j,null,2);
+        
+        // 更新情绪图表（如果有情绪数据）
+        if (j.sentimentData) {
+          updateSentimentCharts(j.sentimentData);
+        }
+      };
+
+      document.getElementById('btnUseInScreener').onclick = async ()=>{
+        const enable = document.getElementById('retrievalEnable').checked;
+        const typed = (document.getElementById('screenUniverse').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+        const uniSet = new Set(typed.concat(Array.from(screenerSel.include)));
+        for (const ex of screenerSel.exclude) uniSet.delete(ex);
+        const typedMerged = Array.from(uniSet);
+        const fac = (document.getElementById('screenFactors').value||'增长,护城河,现金流').split(',').map(s=>s.trim()).filter(Boolean);
+        const body = { market:(document.getElementById('market')?.value||'US'), universe: typedMerged, factors: fac, constraints: {} };
+        if (enable && retrievalState.results?.length){
+          body.retrieve = retrievalState.results.map(r=> ({ snippet: r.snippet })).slice(0, 5);
+        }
+        const res = await fetch('/api/ai/screener', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await res.json();
+        try {
+          const parsed = JSON.parse(j.result);
+          renderScreenerTable(parsed.picks||[], parsed.exclusions||[]);
+        } catch(e){ document.getElementById('aiOut').textContent = typeof j.result==='string' ? j.result : JSON.stringify(j, null, 2); }
+      };
+
+      // Persist include/exclude selections
+      function saveSelToStorage(){
+        try {
+          localStorage.setItem('sel_include', JSON.stringify(Array.from(screenerSel.include)));
+          localStorage.setItem('sel_exclude', JSON.stringify(Array.from(screenerSel.exclude)));
+        } catch(e){}
+      }
+      function loadSelFromStorage(){
+        try {
+          const inc = JSON.parse(localStorage.getItem('sel_include')||'[]');
+          const exc = JSON.parse(localStorage.getItem('sel_exclude')||'[]');
+          screenerSel.include = new Set(inc.filter(Boolean));
+          screenerSel.exclude = new Set(exc.filter(Boolean));
+          const incEl = document.getElementById('selInclude');
+          const excEl = document.getElementById('selExclude');
+          if (incEl && excEl){
+            incEl.innerHTML = inc.map(s=>`<span class=\"badge\">${s}</span>`).join('');
+            excEl.innerHTML = exc.map(s=>`<span class=\"badge\">${s}</span>`).join('');
+          }
+        } catch(e){}
+      }
+      loadSelFromStorage();
+      document.getElementById('btnSavePrompt').onclick = async ()=>{
+        const t = document.getElementById('promptType').value;
+        const res = await fetch('/api/prompts');
+        const obj = await res.json();
+        obj[t] = document.getElementById('promptEditor').value || '';
+        const put = await fetch('/api/prompts', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) });
+        const out = await put.json();
+        alert('Saved: '+ (out.saved||'ok'));
+      };
+
+      document.getElementById('btnSentiment').onclick = async ()=>{
+        const f = document.getElementById('sentFile').files?.[0];
+        if(!f){ alert('选择摘要文件'); return; }
+        const text = await f.text();
+        const body = { scope:'market', market:(document.getElementById('market')?.value||'US'), symbols:[], summary: text };
+        const res = await fetch('/api/ai/sentiment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await res.json();
+        document.getElementById('aiOut').textContent = typeof j.result === 'string' ? j.result : JSON.stringify(j, null, 2);
+      };
+
+      document.getElementById('btnScreener').onclick = async ()=>{
+        const uni = (document.getElementById('screenUniverse').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+        const fac = (document.getElementById('screenFactors').value||'增长,护城河,现金流').split(',').map(s=>s.trim()).filter(Boolean);
+        const body = { market:(document.getElementById('market')?.value||'US'), universe: uni, factors: fac, constraints: {} };
+        const res = await fetch('/api/ai/screener', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await res.json();
+        try {
+          const parsed = JSON.parse(j.result);
+          renderScreenerTable(parsed.picks||[], parsed.exclusions||[]);
+        } catch(e){ document.getElementById('aiOut').textContent = typeof j.result === 'string' ? j.result : JSON.stringify(j, null, 2); }
+      };
+
+      document.getElementById('btnNewsImport').onclick = async ()=>{
+        const f = document.getElementById('newsImportFile').files?.[0];
+        const d = document.getElementById('newsImportDate').value?.trim();
+        if (!f){ alert('选择文件'); return; }
+        const fd = new FormData(); fd.append('file', f); if (d) fd.append('date', d);
+        const res = await fetch('/api/news/import', { method:'POST', body: fd });
+        const j = await res.json();
+        const outEl = document.getElementById('aiOut');
+        outEl.textContent = JSON.stringify(j, null, 2);
+        // 自动触发情绪分析：用刚导入的文件内容
+        try {
+          const text = await f.text();
+          const body = { scope:'market', market:(document.getElementById('market')?.value||'US'), symbols:[], summary: text };
+          const r2 = await fetch('/api/ai/sentiment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          const j2 = await r2.json();
+          outEl.textContent += '\n\n# Sentiment\n' + (typeof j2.result === 'string' ? j2.result : JSON.stringify(j2, null, 2));
+        } catch (e) {
+          outEl.textContent += '\n\n(sentiment auto-run failed: '+ (e?.message||e) +')';
+        }
+      };
+
+      document.getElementById('btnAgg').onclick = async ()=>{
+        const s = document.getElementById('aggUrls').value||'';
+        const urls = s.split(',').map(v=>v.trim()).filter(Boolean);
+        if (!urls.length){ alert('请输入URL/RSS'); return; }
+        const rssOnly = document.getElementById('aggRssOnly').checked;
+        const dedupe = document.getElementById('aggDedupe').checked;
+        const kw = (document.getElementById('aggKeywords').value||'').split(',').map(v=>v.trim()).filter(Boolean);
+        const body = { urls, summarize:true, batchSentiment:true, rssOnly, dedupe, keywords: kw };
+        const res = await fetch('/api/news/aggregate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await res.json();
+        document.getElementById('aiOut').textContent = JSON.stringify(j, null, 2);
+      };
+
+      document.getElementById('btnListNews').onclick = async ()=>{
+        const res = await fetch('/api/news/list');
+        const arr = await res.json();
+        const out = document.getElementById('aiOut');
+        out.innerHTML = `<div class="kv" style="margin-bottom:6px">`
+          + `<input id="minScore" placeholder="最小评分(0-1)" style="width:120px" />`
+          + `<button class="btn" id="btnFetchSentiScores">拉取情绪并排序</button>`
+          + `</div>`
+          + `<table id="newsTable" class="mono" style="width:100%">`
+          + `<thead><tr><th>File</th><th>Size</th><th>Score</th><th>Action</th></tr></thead>`
+          + `<tbody>`
+          + arr.map(it=>`<tr data-path="${it.path}"><td>${it.name}</td><td>${it.size}</td><td class="score"></td><td><button data-path="${it.path}" class="btn btn-open-news">查看</button></td></tr>`).join('')
+          + `</tbody></table>`;
+        document.querySelectorAll('.btn-open-news').forEach(btn=>{
+          btn.onclick = async ()=>{
+            const p = btn.getAttribute('data-path');
+            const r = await fetch(`/api/news/item?path=${encodeURIComponent(p)}`);
+            const t = await r.text();
+            // 查询已有情绪
+            let senti = '{}';
+            try { const rs = await fetch(`/api/news/sentiment?path=${encodeURIComponent(p)}`); senti = await rs.text(); } catch(e){}
+            out.innerHTML = '';
+            const controls = document.createElement('div');
+            controls.className = 'kv';
+            controls.innerHTML = `<button class="btn" id="btnReSenti">重跑情绪</button>`+
+              `<input id="reModel" placeholder="model (默认保留)" />`+
+              `<button class="btn" id="btnReSentiModel">改模型重跑</button>`;
+            const pre = document.createElement('pre'); pre.className='mono'; pre.textContent = t;
+            const sentiWrap = document.createElement('div');
+            const pre2 = document.createElement('pre'); pre2.className='mono'; pre2.textContent = senti;
+            try {
+              const obj = JSON.parse(senti || '{}');
+              const card = document.createElement('div');
+              card.className = 'card';
+              const score = (obj.score ?? obj.Score ?? obj.sentiment?.score);
+              const aspects = obj.aspects || obj.points || [];
+              card.innerHTML = `<div class=\"content\"><div>Score: <b>${score ?? 'n/a'}</b></div>`
+                + `<ul>` + (Array.isArray(aspects) ? aspects.map(a=>`<li>${(a.topic||a.title||'aspect')}: ${(a.score??'')} ${(a.evidence?('- '+(Array.isArray(a.evidence)?a.evidence.join('; '):a.evidence)):'')}</li>`).join('') : '') + `</ul>`
+                + `</div>`;
+              sentiWrap.appendChild(card);
+            } catch(e){}
+            sentiWrap.appendChild(pre2);
+            // 选股联动
+            const linkSel = document.createElement('div'); linkSel.className='kv';
+            linkSel.innerHTML = `<input id=\"newsSymbol\" placeholder=\"SYMBOL\" />`+
+              `<button class=\"btn\" id=\"btnAddInclude\">加入候选</button>`+
+              `<button class=\"btn\" id=\"btnAddExclude\">加入排除</button>`;
+            out.appendChild(controls); out.appendChild(document.createElement('hr')); out.appendChild(pre); out.appendChild(document.createElement('hr')); out.appendChild(sentiWrap); out.appendChild(document.createElement('hr')); out.appendChild(linkSel);
+
+            document.getElementById('btnReSenti').onclick = async ()=>{
+              const body = { scope:'market', market:(document.getElementById('market')?.value||'US'), symbols:[], summary: t };
+              const res2 = await fetch('/api/ai/sentiment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+              const j2 = await res2.json(); pre2.textContent = typeof j2.result==='string'? j2.result: JSON.stringify(j2,null,2);
+            };
+            document.getElementById('btnReSentiModel').onclick = async ()=>{
+              const mdl = document.getElementById('reModel').value?.trim();
+              if (!mdl){ alert('输入模型名或保留空使用默认'); }
+              const endpoint = (localStorage.getItem('ai_endpoint') || document.getElementById('aiEndpoint').value || '').trim();
+              const apiKey = (localStorage.getItem('ai_apiKey') || document.getElementById('aiApiKey').value || '').trim();
+              const body = { scope:'market', market:(document.getElementById('market')?.value||'US'), symbols:[], summary: t, override: mdl? { model: mdl, endpoint, apiKey }: undefined };
+              // 简化：直接调用同端点；若需切换后端模型，可配 application.yml 或临时改 UI 保存
+              const res2 = await fetch('/api/ai/sentiment', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+              const j2 = await res2.json(); pre2.textContent = typeof j2.result==='string'? j2.result: JSON.stringify(j2,null,2);
+            };
+          };
+        });
+        document.getElementById('btnFetchSentiScores').onclick = async ()=>{
+          const rows = Array.from(document.querySelectorAll('#newsTable tbody tr'));
+          for (const tr of rows){
+            const p = tr.getAttribute('data-path');
+            try {
+              const rs = await fetch(`/api/news/sentiment?path=${encodeURIComponent(p)}`);
+              const txt = await rs.text();
+              const obj = JSON.parse(txt||'{}');
+              const sc = obj.score ?? obj.Score ?? obj.sentiment?.score;
+              tr.querySelector('.score').textContent = (sc!=null? Number(sc).toFixed(3):'');
+              tr.setAttribute('data-score', sc!=null? Number(sc): -1);
+            } catch(e){ tr.setAttribute('data-score','-1'); }
+          }
+          const min = parseFloat(document.getElementById('minScore').value||'NaN');
+          const body = document.querySelector('#newsTable tbody');
+          const sorted = rows.sort((a,b)=> (parseFloat(b.getAttribute('data-score')||'-1') - parseFloat(a.getAttribute('data-score')||'-1')));
+          body.innerHTML = '';
+          for (const tr of sorted){
+            const sc = parseFloat(tr.getAttribute('data-score')||'-1');
+            if (!isNaN(min) && !(sc>=min)) continue;
+            body.appendChild(tr);
+          }
+        };
+      };
+
+      document.getElementById('alertsSubscribe').onchange = (e)=>{
+        if (e.target.checked){
+          const es = new EventSource('/api/alerts/stream');
+          es.addEventListener('alert', ev=>{
+            const out = document.getElementById('aiOut');
+            out.textContent = (out.textContent||'') + '\n' + ev.data;
+          });
+          e.target.__es = es;
+        } else {
+          e.target.__es?.close();
+          e.target.__es = null;
+        }
+      };
+
+      document.getElementById('btnQuotesImport').onclick = async ()=>{
+        const f = document.getElementById('quotesCsv').files?.[0];
+        const sym = document.getElementById('quotesSymbol').value?.trim();
+        const mkt = document.getElementById('quotesMarket').value?.trim();
+        if (!f || !sym){ alert('选择CSV并填写SYMBOL'); return; }
+        const fd = new FormData(); fd.append('file', f); fd.append('symbol', sym); if (mkt) fd.append('market', mkt);
+        const res = await fetch('/api/quotes/import', { method:'POST', body: fd });
+        const j = await res.json();
+        document.getElementById('aiOut').textContent = JSON.stringify(j, null, 2);
+      };
+
+      document.getElementById('btnLoadLocalQuotes').onclick = async ()=>{
+        const sym = document.getElementById('quotesSymbol').value?.trim();
+        const mkt = document.getElementById('quotesMarket').value?.trim();
+        if (!sym){ alert('填写SYMBOL'); return; }
+        const url = `/api/quotes/${encodeURIComponent((mkt||'US').toLowerCase())}/${encodeURIComponent(sym)}`;
+        const res = await fetch(url);
+        const arr = await res.json();
+        // map to chart format
+        state.candles = arr.map(r=>({ timestamp: Date.parse(r.timestamp) || +r.timestamp || r.timestamp, open:r.open, high:r.high, low:r.low, close:r.close, volume:r.volume }));
+        renderChart();
+      };
+
+      document.getElementById('btnOpenRules').onclick = async ()=>{
+        const res = await fetch('/api/alerts/rules');
+        const txt = await res.text();
+        const ed = document.getElementById('rulesEditor'); ed.style.display='block'; ed.value = txt;
+      };
+
+      document.getElementById('btnSaveRules').onclick = async ()=>{
+        const txt = document.getElementById('rulesEditor').value || '';
+        const res = await fetch('/api/alerts/rules', { method:'PUT', headers:{'Content-Type':'text/plain'}, body: txt });
+        const j = await res.json();
+        alert('Saved: '+ (j.saved || 'ok'));
+      };
+
+      // 全局选股数据
+      let screenerData = { picks: [], exclusions: [] };
+      
+      function renderScreenerTable(picks, exclusions){
+        screenerData.picks = picks || [];
+        screenerData.exclusions = exclusions || [];
+        
+        // 显示选股控制面板
+        document.getElementById('screenerControls').style.display = 'block';
+        
+        // 渲染表格
+        updateScreenerTable();
+        
+        // 自动触发多标的等权模拟（使用本地行情）
+        simulatePicksEquity(picks.map(p=>p.symbol).filter(Boolean).slice(0, 10));
+      }
+      
+      // 绑定预设重算
+      document.addEventListener('DOMContentLoaded', function(){
+        const recalc = ()=>{
+          try {
+            const txt = document.getElementById('aiOut')?.textContent || '';
+            if (!txt) return;
+            const maybe = JSON.parse(txt);
+            updateSentimentCharts(maybe.sentiment || maybe);
+          } catch(e) { /* ignore */ }
+        };
+        const sel = document.getElementById('sentimentPreset');
+        const btn = document.getElementById('btnRecalcSentiment');
+        if (sel) sel.addEventListener('change', recalc);
+        if (btn) btn.addEventListener('click', recalc);
+      });
+
+      function updateScreenerTable(){
+        const filter = document.getElementById('screenerFilter').value.toLowerCase();
+        const sort = document.getElementById('screenerSort').value;
+        
+        let filtered = screenerData.picks.filter(p => 
+          !filter || p.symbol.toLowerCase().includes(filter) || (p.reason || '').toLowerCase().includes(filter)
+        );
+        
+        // 排序
+        if (sort === 'score-desc') {
+          filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+        } else if (sort === 'score-asc') {
+          filtered.sort((a, b) => (a.score || 0) - (b.score || 0));
+        } else if (sort === 'symbol') {
+          filtered.sort((a, b) => (a.symbol || '').localeCompare(b.symbol || ''));
+        }
+        
+        const rows = filtered.map(p => 
+          `<tr style="cursor:pointer" onclick="toggleScreenerPick('${p.symbol}')">
+            <td>${p.symbol}</td>
+            <td>${(p.score ?? '').toString()}</td>
+            <td>${p.reason || ''}</td>
+            <td><span class="badge" style="background:${screenerData.exclusions.includes(p.symbol) ? '#ff6b6b' : '#51cf66'}">${screenerData.exclusions.includes(p.symbol) ? '排除' : '包含'}</span></td>
+          </tr>`
+        ).join('');
+        
+        document.getElementById('screenerTable').innerHTML = 
+          `<table class="mono" style="width:100%">
+            <thead><tr><th>代码</th><th>评分</th><th>原因</th><th>状态</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan=4>无数据</td></tr>'}</tbody>
+          </table>`;
+      }
+      
+      function toggleScreenerPick(symbol){
+        const idx = screenerData.exclusions.indexOf(symbol);
+        if (idx >= 0) {
+          screenerData.exclusions.splice(idx, 1);
+        } else {
+          screenerData.exclusions.push(symbol);
+        }
+        updateScreenerTable();
+      }
+      
+      function exportScreenerCSV(){
+        const headers = ['代码', '评分', '原因', '状态'];
+        const rows = screenerData.picks.map(p => [
+          p.symbol || '',
+          (p.score || '').toString(),
+          (p.reason || '').replace(/,/g, '，'),
+          screenerData.exclusions.includes(p.symbol) ? '排除' : '包含'
+        ]);
+        
+        const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      // 全局回测数据
+      let backtestData = { symbols: [], equity: [], trades: [], positions: {} };
+      let replayState = { currentDay: 0, playing: false, interval: null };
+
+      async function simulatePicksEquity(symbols){
+        if (!symbols.length){ return; }
+        
+        // 保存选股结果到全局状态
+        backtestData.symbols = symbols;
+        
+        // 对每个symbol取本地行情，按日期对齐
+        const series = {};
+        for (const s of symbols){
+          try {
+            const r = await fetch(`/api/quotes/${encodeURIComponent(('US').toLowerCase())}/${encodeURIComponent(s)}`);
+            const j = await r.json();
+            const arr = j && j.data ? j.data : j; // 兼容旧/新返回
+            for (const row of arr){ 
+              const d = row.timestamp; 
+              const c = +row.close; 
+              (series[d] || (series[d] = {}))[s] = c; 
+            }
+          } catch(e){ console.warn('Failed to load quotes for', s, e); }
+        }
+        
+        const dates = Object.keys(series).sort(); 
+        if (!dates.length) return;
+        
+        // 等权组合回测
+        const weights = 1 / symbols.length;
+        const equity = []; 
+        const trades = [];
+        const positions = {};
+        let acc = 1;
+        let prev = null;
+        let lastRebalance = 0;
+        const rebalanceDays = parseInt(document.getElementById('rebalanceDays').value) || 30;
+        const enableCosts = document.getElementById('enableTradingCosts').checked;
+        
+        // 初始化持仓
+        for (const s of symbols) positions[s] = 0;
+        
+        for (let i = 0; i < dates.length; i++){
+          const d = dates[i];
+          const basket = series[d];
+          
+          // 仅当所有标的都有价时再计算
+          if (symbols.every(s => basket[s] > 0)){
+            const dayIndex = i;
+            
+            // 换手逻辑：定期重新平衡
+            if (dayIndex - lastRebalance >= rebalanceDays || dayIndex === 0){
+              // 计算目标权重
+              const totalValue = Object.keys(positions).reduce((sum, s) => 
+                sum + (positions[s] * (basket[s] || 0)), 0);
+              
+              if (totalValue > 0){
+                for (const s of symbols){
+                  const targetShares = (totalValue * weights) / basket[s];
+                  const currentShares = positions[s];
+                  const tradeShares = targetShares - currentShares;
+                  
+                  if (Math.abs(tradeShares) > 0.001){ // 避免微小交易
+                    positions[s] = targetShares;
+                    
+                    // 记录交易
+                    const trade = {
+                      date: d,
+                      symbol: s,
+                      shares: tradeShares,
+                      price: basket[s],
+                      value: Math.abs(tradeShares * basket[s]),
+                      side: tradeShares > 0 ? 'BUY' : 'SELL'
+                    };
+                    
+                    // 计算交易成本
+                    if (enableCosts){
+                      const commission = Math.max(trade.value * 0.0003, 5); // 0.03% + 5元最低
+                      const slippage = trade.value * 0.0001; // 0.01% 滑点
+                      trade.cost = commission + slippage;
+                    } else {
+                      trade.cost = 0;
+                    }
+                    
+                    trades.push(trade);
+                  }
+                }
+              }
+              lastRebalance = dayIndex;
+            }
+            
+            // 计算组合净值
+            if (prev){
+              let portRet = 0;
+              let totalCost = 0;
+              
+              for (const s of symbols){ 
+                const ret = (basket[s] / prev[s] - 1);
+                portRet += ret * weights;
+              }
+              
+              // 扣除交易成本
+              if (enableCosts){
+                const dayTrades = trades.filter(t => t.date === d);
+                const dayCost = dayTrades.reduce((sum, t) => sum + (t.cost || 0), 0);
+                const portfolioValue = Object.keys(positions).reduce((sum, s) => 
+                  sum + (positions[s] * basket[s]), 0);
+                if (portfolioValue > 0){
+                  totalCost = dayCost / portfolioValue;
+                }
+              }
+              
+              acc *= (1 + portRet - totalCost);
+            }
+            
+            prev = { ...basket };
+            equity.push([d, acc]);
+          }
+        }
+        
+        // 保存回测数据
+        backtestData.equity = equity;
+        backtestData.trades = trades;
+        backtestData.positions = positions;
+        
+        // 渲染图表
+        const opt = { 
+          animation: false, 
+          tooltip: { trigger: 'axis' }, 
+          xAxis: { type: 'category', data: equity.map(x => x[0]) }, 
+          yAxis: { scale: true }, 
+          grid: { left: 40, right: 20, top: 20, bottom: 40 }, 
+          series: [{ 
+            type: 'line', 
+            name: '组合净值', 
+            data: equity.map(x => x[1]),
+            smooth: true,
+            lineStyle: { width: 2 }
+          }] 
+        };
+        perfChart.setOption(opt);
+        
+        // 计算绩效指标
+        const pv = equity.map(x => x[1]);
+        let maxPeak = 1, mdd = 0;
+        for (const v of pv){ 
+          if (v > maxPeak) maxPeak = v; 
+          mdd = Math.max(mdd, (maxPeak - v) / maxPeak); 
+        }
+        
+        const dailyRet = [];
+        for (let i = 1; i < pv.length; i++){ 
+          dailyRet.push(pv[i] / pv[i-1] - 1); 
+        }
+        
+        const avg = dailyRet.reduce((a,b) => a+b, 0) / (dailyRet.length || 1);
+        const vol = Math.sqrt(dailyRet.reduce((a,b) => a+b*b, 0) / (dailyRet.length || 1) - avg*avg);
+        const sharpe = vol > 0 ? avg / vol * Math.sqrt(252) : 0; // 年化夏普比率
+        
+        const totalTrades = trades.length;
+        const totalCost = trades.reduce((sum, t) => sum + (t.cost || 0), 0);
+        const finalValue = pv[pv.length - 1] || 1;
+        const totalReturn = (finalValue - 1) * 100;
+        
+        document.getElementById('perfStats').innerHTML = 
+          `标的数: ${symbols.length} | 总收益: ${totalReturn.toFixed(2)}% | 最大回撤: ${(mdd*100).toFixed(2)}% | ` +
+          `年化收益: ${(avg*252*100).toFixed(2)}% | 年化波动: ${(vol*Math.sqrt(252)*100).toFixed(2)}% | ` +
+          `夏普比率: ${sharpe.toFixed(2)} | 交易次数: ${totalTrades} | 交易成本: ${totalCost.toFixed(2)}元`;
+      }
+      
+      // 每日复盘功能
+      function startDailyReplay(){
+        if (!backtestData.equity.length) {
+          alert('请先运行选股回测');
+          return;
+        }
+        document.getElementById('replayPanel').style.display = 'block';
+        replayState.currentDay = 0;
+        updateReplayDisplay();
+      }
+      
+      function updateReplayDisplay(){
+        if (replayState.currentDay >= backtestData.equity.length) return;
+        
+        const currentDate = backtestData.equity[replayState.currentDay][0];
+        const currentEquity = backtestData.equity[replayState.currentDay][1];
+        
+        document.getElementById('replayDate').textContent = currentDate;
+        
+        // 显示当日统计
+        const dayTrades = backtestData.trades.filter(t => t.date === currentDate);
+        const dayStats = dayTrades.length > 0 ? 
+          `当日交易: ${dayTrades.length}笔 | 成本: ${dayTrades.reduce((s,t) => s+(t.cost||0), 0).toFixed(2)}元` : 
+          '无交易';
+        
+        document.getElementById('replayStats').innerHTML = 
+          `净值: ${currentEquity.toFixed(4)} | ${dayStats}`;
+      }
+      
+      function prevDay(){
+        if (replayState.currentDay > 0){
+          replayState.currentDay--;
+          updateReplayDisplay();
+        }
+      }
+      
+      function nextDay(){
+        if (replayState.currentDay < backtestData.equity.length - 1){
+          replayState.currentDay++;
+          updateReplayDisplay();
+        }
+      }
+      
+      function playReplay(){
+        if (replayState.playing) return;
+        replayState.playing = true;
+        replayState.interval = setInterval(() => {
+          if (replayState.currentDay < backtestData.equity.length - 1){
+            nextDay();
+          } else {
+            stopReplay();
+          }
+        }, 500); // 每500ms播放一天
+      }
+      
+      function stopReplay(){
+        replayState.playing = false;
+        if (replayState.interval){
+          clearInterval(replayState.interval);
+          replayState.interval = null;
+        }
+      }
+      
+      // 导出回测结果
+      function exportBacktest(){
+        if (!backtestData.equity.length) {
+          alert('请先运行回测');
+          return;
+        }
+        
+        const data = {
+          symbols: backtestData.symbols,
+          equity: backtestData.equity,
+          trades: backtestData.trades,
+          summary: {
+            totalReturn: ((backtestData.equity[backtestData.equity.length-1][1] - 1) * 100).toFixed(2) + '%',
+            totalTrades: backtestData.trades.length,
+            totalCost: backtestData.trades.reduce((s,t) => s+(t.cost||0), 0).toFixed(2)
+          }
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backtest_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      
+      // 情绪分析图表
+      let sentimentRadarChart = null;
+      let sentimentHeatmapChart = null;
+      
+      function initSentimentCharts(){
+        sentimentRadarChart = echarts.init(document.getElementById('sentimentRadar'));
+        sentimentHeatmapChart = echarts.init(document.getElementById('sentimentHeatmap'));
+        
+        // 初始化雷达图
+        const radarOption = {
+          tooltip: {},
+          radar: {
+            indicator: [
+              { name: '市场情绪', max: 100 },
+              { name: '技术面', max: 100 },
+              { name: '基本面', max: 100 },
+              { name: '资金面', max: 100 },
+              { name: '政策面', max: 100 },
+              { name: '风险偏好', max: 100 }
+            ]
+          },
+          series: [{
+            name: '情绪分析',
+            type: 'radar',
+            data: [{
+              value: [50, 50, 50, 50, 50, 50],
+              name: '当前情绪',
+              areaStyle: { opacity: 0.3 }
+            }]
+          }]
+        };
+        sentimentRadarChart.setOption(radarOption);
+        
+        // 初始化热力图
+        const heatmapOption = {
+          tooltip: {
+            position: 'top'
+          },
+          grid: {
+            height: '50%',
+            top: '10%'
+          },
+          xAxis: {
+            type: 'category',
+            data: ['周一', '周二', '周三', '周四', '周五'],
+            splitArea: { show: true }
+          },
+          yAxis: {
+            type: 'category',
+            data: ['9:30', '10:00', '10:30', '11:00', '11:30', '13:00', '13:30', '14:00', '14:30', '15:00'],
+            splitArea: { show: true }
+          },
+          visualMap: {
+            min: 0,
+            max: 100,
+            calculable: true,
+            orient: 'horizontal',
+            left: 'center',
+            bottom: '15%',
+            inRange: {
+              color: ['#50a3ba', '#eac736', '#d94e5d']
+            }
+          },
+          series: [{
+            name: '情绪强度',
+            type: 'heatmap',
+            data: [],
+            label: { show: true },
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowColor: 'rgba(0, 0, 0, 0.5)'
+              }
+            }
+          }]
+        };
+        sentimentHeatmapChart.setOption(heatmapOption);
+      }
+      
+      // 维度映射预设
+      const sentimentPresets = {
+        default: {
+          radar: ['market','technical','fundamental','capital','policy','risk'],
+          weights: { market:1, technical:1, fundamental:1, capital:1, policy:1, risk:1 }
+        },
+        tech_fund_policy: {
+          radar: ['technical','fundamental','policy','market','capital','risk'],
+          weights: { technical:1.2, fundamental:1.2, policy:1.2, market:1, capital:1, risk:0.8 }
+        }
+      };
+
+      function mapSentimentToCharts(raw){
+        const presetKey = (document.getElementById('sentimentPreset')?.value) || 'default';
+        const preset = sentimentPresets[presetKey] || sentimentPresets.default;
+        if (!raw) return null;
+
+        // 兼容不同字段命名：尝试从 raw.scores/raw.aspects/raw.summary 中找值
+        const src = raw.scores || raw;
+        const get = (k)=> Number(src[k] ?? src[k.toUpperCase()] ?? src[k.replace('-', '')] ?? 0) || 0;
+
+        const radarValues = preset.radar.map(k => {
+          const w = preset.weights[k] ?? 1;
+          return Math.max(0, Math.min(100, get(k) * w));
+        });
+
+        // 热力图：如果提供了按时间切片的情绪数据 raw.timeline = [[x,y,val],...]
+        const heatmap = Array.isArray(raw.heatmap) ? raw.heatmap : (raw.timeline || []);
+        return { radar: radarValues, heatmap };
+      }
+
+      function updateSentimentCharts(sentimentData){
+        if (!sentimentData) return;
+        // 允许传入原始情绪对象，做一次映射
+        const mapped = sentimentData.radar ? sentimentData : mapSentimentToCharts(sentimentData);
+        if (!mapped) return;
+        
+        // 更新雷达图
+        if (sentimentRadarChart && mapped.radar) {
+          const radarOption = {
+            series: [{
+              data: [{
+                value: mapped.radar,
+                name: '当前情绪',
+                areaStyle: { opacity: 0.3 }
+              }]
+            }]
+          };
+          sentimentRadarChart.setOption(radarOption);
+        }
+        
+        // 更新热力图
+        if (sentimentHeatmapChart && mapped.heatmap) {
+          const heatmapOption = {
+            series: [{
+              data: mapped.heatmap
+            }]
+          };
+          sentimentHeatmapChart.setOption(heatmapOption);
+        }
+      }
+      
+      // 报警历史管理
+      let alertsHistory = [];
+      
+      function loadAlertsHistory(){
+        // 从localStorage加载历史报警
+        const stored = localStorage.getItem('alertsHistory');
+        if (stored) {
+          try {
+            alertsHistory = JSON.parse(stored);
+          } catch(e) {
+            alertsHistory = [];
+          }
+        }
+        renderAlertsHistory();
+      }
+      
+      function renderAlertsHistory(){
+        const filter = document.getElementById('alertFilter').value;
+        const dateFrom = document.getElementById('alertDateFrom').value;
+        const dateTo = document.getElementById('alertDateTo').value;
+        
+        let filtered = alertsHistory;
+        
+        if (filter !== 'all') {
+          filtered = filtered.filter(alert => alert.type === filter);
+        }
+        
+        if (dateFrom) {
+          filtered = filtered.filter(alert => alert.timestamp >= dateFrom);
+        }
+        
+        if (dateTo) {
+          filtered = filtered.filter(alert => alert.timestamp <= dateTo);
+        }
+        
+        // 按时间倒序排列
+        filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        const html = filtered.map(alert => `
+          <div style="padding:8px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong>${alert.symbol || 'N/A'}</strong> - ${alert.message}
+              <br><small style="color:#666">${alert.timestamp} | ${alert.type}</small>
+            </div>
+            <span class="badge" style="background:${getAlertColor(alert.level)}">${alert.level}</span>
+          </div>
+        `).join('');
+        
+        document.getElementById('alertsHistory').innerHTML = html || '<div style="text-align:center;color:#666;padding:20px">暂无报警记录</div>';
+      }
+      
+      function getAlertColor(level){
+        switch(level) {
+          case 'HIGH': return '#ff6b6b';
+          case 'MEDIUM': return '#ffd43b';
+          case 'LOW': return '#51cf66';
+          default: return '#868e96';
+        }
+      }
+      
+      function clearAlertsHistory(){
+        if (confirm('确定要清空所有报警历史吗？')) {
+          alertsHistory = [];
+          localStorage.removeItem('alertsHistory');
+          renderAlertsHistory();
+        }
+      }
+      
+      function addAlert(alert){
+        alertsHistory.unshift({
+          ...alert,
+          timestamp: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        });
+        
+        // 保持最近1000条记录
+        if (alertsHistory.length > 1000) {
+          alertsHistory = alertsHistory.slice(0, 1000);
+        }
+        
+        localStorage.setItem('alertsHistory', JSON.stringify(alertsHistory));
+        renderAlertsHistory();
+      }
+      
+      // 绑定筛选器事件
+      document.addEventListener('DOMContentLoaded', function(){
+        document.getElementById('screenerFilter').addEventListener('input', updateScreenerTable);
+        document.getElementById('screenerSort').addEventListener('change', updateScreenerTable);
+        document.getElementById('alertFilter').addEventListener('change', renderAlertsHistory);
+        document.getElementById('alertDateFrom').addEventListener('change', renderAlertsHistory);
+        document.getElementById('alertDateTo').addEventListener('change', renderAlertsHistory);
+        
+        // 初始化图表
+        initSentimentCharts();
+        loadAlertsHistory();
+        
+        // 绑定按钮事件
+        document.getElementById('btnSecurity').onclick = () => {
+          const panel = document.querySelector('.card h3:contains("安全管理")').parentElement;
+          panel.scrollIntoView({ behavior: 'smooth' });
+        };
+        
+        document.getElementById('btnDataStorage').onclick = () => {
+          const panel = document.querySelector('.card h3:contains("数据存储管理")').parentElement;
+          panel.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        // 市场选择持久化
+        const marketSel = document.getElementById('market');
+        const storageMarketSel = document.getElementById('storageMarket');
+        const saved = localStorage.getItem('ui.market');
+        const applySaved = (sel)=>{ if (sel && saved && ['US','CN','HK'].includes(saved)) sel.value = saved; };
+        applySaved(marketSel);
+        applySaved(storageMarketSel);
+        // Screener 默认 universe 随 market 联动（若未手动编辑）
+        const universeInput = document.getElementById('screenUniverse');
+        const universeDefaults = {
+          US: 'AAPL,MSFT,NVDA,GOOGL,AMZN,TSLA,AMD,META',
+          CN: '600519,601318,600036,600276,300750,000858,000001,601728',
+          HK: '00700,03690,00939,01299,00941,00005,00001,00011'
+        };
+        const setUniverseIfNotEdited = ()=>{
+          if (!universeInput) return;
+          const edited = universeInput.dataset.userEdited === '1';
+          if (!edited || !universeInput.value.trim()){
+            const m = (marketSel?.value || 'US').toUpperCase();
+            universeInput.value = universeDefaults[m] || universeDefaults.US;
+          }
+        };
+        if (universeInput){
+          universeInput.addEventListener('input', ()=>{ universeInput.dataset.userEdited = '1'; });
+        }
+        setUniverseIfNotEdited();
+        const onChangePersist = (sel)=> sel && sel.addEventListener('change', ()=>{
+          localStorage.setItem('ui.market', sel.value);
+          if (sel === marketSel && storageMarketSel) storageMarketSel.value = sel.value;
+          if (sel === storageMarketSel && marketSel) marketSel.value = sel.value;
+          setUniverseIfNotEdited();
+        });
+        onChangePersist(marketSel);
+        onChangePersist(storageMarketSel);
+      });
+      
+      // 安全管理功能
+      async function storeApiKey() {
+        const provider = document.getElementById('securityProvider').value;
+        const apiKey = document.getElementById('securityApiKey').value;
+        
+        if (!apiKey.trim()) {
+          alert('请输入API Key');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/security/api-key?provider=${provider}&apiKey=${encodeURIComponent(apiKey)}`, {
+            method: 'POST'
+          });
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('securityStatus').textContent = `✅ ${provider} API Key 存储成功`;
+            document.getElementById('securityApiKey').value = '';
+          } else {
+            document.getElementById('securityStatus').textContent = `❌ 存储失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('securityStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function checkApiKey() {
+        const provider = document.getElementById('securityProvider').value;
+        
+        try {
+          const res = await fetch(`/api/security/api-key/${provider}`);
+          const result = await res.json();
+          
+          if (result.exists) {
+            document.getElementById('securityStatus').textContent = `✅ ${provider} API Key 已存储`;
+          } else {
+            document.getElementById('securityStatus').textContent = `❌ ${provider} API Key 未存储`;
+          }
+        } catch (e) {
+          document.getElementById('securityStatus').textContent = `❌ 检查失败: ${e.message}`;
+        }
+      }
+      
+      async function removeApiKey() {
+        const provider = document.getElementById('securityProvider').value;
+        
+        if (!confirm(`确定要删除 ${provider} 的API Key吗？`)) {
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/security/api-key/${provider}`, {
+            method: 'DELETE'
+          });
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('securityStatus').textContent = `✅ ${provider} API Key 已删除`;
+          } else {
+            document.getElementById('securityStatus').textContent = `❌ 删除失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('securityStatus').textContent = `❌ 删除失败: ${e.message}`;
+        }
+      }
+      
+      async function refreshRateLimit() {
+        try {
+          const res = await fetch('/api/security/rate-limit/ai.ollama');
+          const result = await res.json();
+          
+          document.getElementById('rateLimitInfo').innerHTML = 
+            `当前请求: ${result.currentRequests}/${result.maxRequests}<br>` +
+            `剩余时间: ${Math.ceil(result.remainingTimeMs / 1000)}秒<br>` +
+            `状态: ${result.isAllowed ? '✅ 允许' : '❌ 限制'}`;
+        } catch (e) {
+          document.getElementById('rateLimitInfo').textContent = `❌ 获取失败: ${e.message}`;
+        }
+      }
+      
+      async function getTimeoutConfig() {
+        const operation = document.getElementById('timeoutOperation').value;
+        
+        try {
+          const res = await fetch(`/api/security/timeout/${operation}`);
+          const result = await res.json();
+          
+          document.getElementById('timeoutInfo').innerHTML = 
+            `操作: ${operation}<br>` +
+            `超时: ${result.timeoutMs}ms<br>` +
+            `重试: ${result.maxRetries}次`;
+        } catch (e) {
+          document.getElementById('timeoutInfo').textContent = `❌ 获取失败: ${e.message}`;
+        }
+      }
+      
+      async function setTimeoutConfig() {
+        const operation = document.getElementById('timeoutOperation').value;
+        const timeoutMs = parseInt(document.getElementById('timeoutMs').value);
+        const maxRetries = parseInt(document.getElementById('maxRetries').value);
+        
+        if (isNaN(timeoutMs) || isNaN(maxRetries)) {
+          alert('请输入有效的数字');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/security/timeout/${operation}?timeoutMs=${timeoutMs}&maxRetries=${maxRetries}`, {
+            method: 'POST'
+          });
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('timeoutInfo').textContent = `✅ ${operation} 配置已更新`;
+          } else {
+            document.getElementById('timeoutInfo').textContent = `❌ 更新失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('timeoutInfo').textContent = `❌ 更新失败: ${e.message}`;
+        }
+      }
+      
+      // 数据存储功能
+      async function uploadQuotes() {
+        const market = document.getElementById('storageMarket').value;
+        const symbol = document.getElementById('storageSymbol').value;
+        const file = document.getElementById('storageQuotesFile').files[0];
+        const useParquet = document.getElementById('useParquet').checked;
+        
+        if (!symbol.trim()) {
+          alert('请输入股票代码');
+          return;
+        }
+        
+        if (!file) {
+          alert('请选择CSV文件');
+          return;
+        }
+        
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('useParquet', useParquet);
+          
+          const res = await fetch(`/api/storage/quotes/${market}/${symbol}?useParquet=${useParquet}`, {
+            method: 'POST',
+            body: formData
+          });
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('quotesStatus').textContent = `✅ ${result.message}`;
+          } else {
+            document.getElementById('quotesStatus').textContent = `❌ 上传失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('quotesStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function loadQuotes() {
+        const market = document.getElementById('storageMarket').value;
+        const symbol = document.getElementById('storageSymbol').value;
+        const preferParquet = document.getElementById('useParquet').checked;
+        
+        if (!symbol.trim()) {
+          alert('请输入股票代码');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/storage/quotes/${market}/${symbol}?preferParquet=${preferParquet}`);
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('quotesStatus').textContent = 
+              `✅ 加载成功: ${result.count}条K线数据`;
+            
+            // 如果有数据，可以在这里触发图表更新
+            if (result.data && result.data.length > 0) {
+              console.log('Loaded quotes:', result.data);
+            }
+          } else {
+            document.getElementById('quotesStatus').textContent = `❌ 加载失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('quotesStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function migrateToParquet() {
+        const market = document.getElementById('storageMarket').value;
+        const symbol = document.getElementById('storageSymbol').value;
+        
+        if (!symbol.trim()) {
+          alert('请输入股票代码');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/storage/migrate/${market}/${symbol}`, {
+            method: 'POST'
+          });
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('quotesStatus').textContent = `✅ ${result.message}`;
+          } else {
+            document.getElementById('quotesStatus').textContent = `❌ 迁移失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('quotesStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function listAvailableData() {
+        try {
+          const res = await fetch('/api/storage/quotes');
+          const result = await res.json();
+          
+          if (result.success) {
+            let stats = '数据统计:\n';
+            for (const [market, symbols] of Object.entries(result.data)) {
+              stats += `${market.toUpperCase()}: ${symbols.length}个股票\n`;
+            }
+            document.getElementById('dataStats').textContent = stats;
+          } else {
+            document.getElementById('dataStats').textContent = `❌ 获取失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('dataStats').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function loadNews() {
+        const date = document.getElementById('newsDate').value;
+        
+        if (!date) {
+          alert('请选择日期');
+          return;
+        }
+        
+        try {
+          const res = await fetch(`/api/storage/news/${date}`);
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('newsStatus').textContent = 
+              `✅ 加载成功: ${result.count}条新闻`;
+          } else {
+            document.getElementById('newsStatus').textContent = `❌ 加载失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('newsStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+      
+      async function loadAiResults() {
+        const type = document.getElementById('aiType').value;
+        const symbol = document.getElementById('aiSymbol').value;
+        const date = document.getElementById('aiDate').value;
+        
+        try {
+          let url = `/api/storage/ai/${type}`;
+          const params = new URLSearchParams();
+          if (symbol) params.append('symbol', symbol);
+          if (date) params.append('date', date);
+          if (params.toString()) url += '?' + params.toString();
+          
+          const res = await fetch(url);
+          const result = await res.json();
+          
+          if (result.success) {
+            document.getElementById('aiStatus').textContent = 
+              `✅ 加载成功: ${result.count}条${type}结果`;
+          } else {
+            document.getElementById('aiStatus').textContent = `❌ 加载失败: ${result.error}`;
+          }
+        } catch (e) {
+          document.getElementById('aiStatus').textContent = `❌ 请求失败: ${e.message}`;
+        }
+      }
+    })();
 
     // Strategy actions
     document.getElementById('btnPreviewStrategy').onclick = ()=>{

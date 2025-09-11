@@ -68,6 +68,13 @@ management:
   otlp:
     tracing:
       endpoint: http://localhost:4318/v1/traces
+ai:
+  provider: ollama
+  model: qwen2.5:14b-instruct
+  endpoint: http://localhost:11434/v1/chat/completions
+  maxTokens: 2048
+  temperature: 0.2
+  timeoutMs: 200000
 ocr:
   enabled: true
   tessdataPath: 
@@ -82,6 +89,7 @@ rate-limit:
   default-requests-per-hour: 1000
 # Privacy Configuration
 privacy:
+  enabled: false
   anonymize-data: false
   persist-images: true
   data-retention-days: 30

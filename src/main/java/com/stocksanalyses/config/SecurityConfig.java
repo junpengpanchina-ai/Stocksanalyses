@@ -1,43 +1,37 @@
 package com.stocksanalyses.config;
 
-import com.stocksanalyses.security.JwtAuthenticationEntryPoint;
-import com.stocksanalyses.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.crypto.encrypt.Encryptors;
+import org.springframework.security.crypto.encrypt.TextEncryptor;
 
+/**
+ * 安全配置：API Key加密存储（ENV 注入密码/盐）
+ */
 @Configuration
-@EnableWebSecurity
 public class SecurityConfig {
 
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    @Value("${security.encryption.password:${ENC_PASSWORD:}}")
+    private String encryptionPassword;
 
-    public SecurityConfig(JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-                         JwtAuthenticationFilter jwtAuthenticationFilter) {
-        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    @Value("${security.encryption.salt:${ENC_SALT:}}")
+    private String encryptionSalt;
+
+    @Bean
+    public TextEncryptor textEncryptor() {
+        if (encryptionPassword == null || encryptionPassword.isEmpty() || encryptionSalt == null || encryptionSalt.isEmpty()) {
+            // 回退到不可逆 no-op（但仍返回一个加密器以避免 NPE）；强烈建议配置 ENV
+            return new TextEncryptor() {
+                @Override public String encrypt(String text) { return text; }
+                @Override public String decrypt(String encryptedText) { return encryptedText; }
+            };
+        }
+        return Encryptors.text(encryptionPassword, encryptionSalt);
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(AbstractHttpConfigurer::disable)
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(authz -> authz
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
-                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
+    public ApiKeyManager apiKeyManager(TextEncryptor textEncryptor) {
+        return new ApiKeyManager(textEncryptor);
     }
 }

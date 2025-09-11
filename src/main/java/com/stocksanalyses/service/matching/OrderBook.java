@@ -40,6 +40,9 @@ public class OrderBook {
   }
 
   private static void enqueue(NavigableMap<Long, Deque<Order>> sideMap, Long price, Order order) {
+    if (price == null) {
+      throw new IllegalArgumentException("Price cannot be null for passive enqueue");
+    }
     Deque<Order> q = sideMap.computeIfAbsent(price, p -> new ArrayDeque<>());
     q.addLast(order);
   }
@@ -52,15 +55,24 @@ public class OrderBook {
       Deque<Order> q = oppLevel.getValue();
       if (q.isEmpty()) { removeEmptyLevel(taker.side == Side.BUY ? asks : bids, oppLevel.getKey()); continue; }
       Order maker = q.peekFirst();
-      long makerAvail = maker.type == OrderType.ICEBERG ? maker.visibleRemaining : maker.remaining;
-      if (makerAvail <= 0) { q.pollFirst(); maybeRefillIceberg(maker); continue; }
+      long makerAvail = maker.type == OrderType.ICEBERG ? (maker.visibleRemaining == null ? 0 : maker.visibleRemaining) : maker.remaining;
+      if (makerAvail <= 0) {
+        if (maker.type == OrderType.ICEBERG) {
+          maybeRefillIceberg(maker);
+          makerAvail = maker.visibleRemaining == null ? 0 : maker.visibleRemaining;
+          if (makerAvail <= 0) { q.pollFirst(); continue; }
+        } else {
+          q.pollFirst();
+          continue;
+        }
+      }
       long qty = Math.min(taker.remaining, makerAvail);
       long price = oppLevel.getKey();
       
       // 计算费用
-      Fill tempFill = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, null);
+      Fill tempFill = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, null, taker.accountId, maker.accountId);
       var fees = feeCalculator.calculateFees(tempFill, taker, maker);
-      Fill f = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, fees);
+      Fill f = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, fees, taker.accountId, maker.accountId);
       fills.add(f);
 
       taker.remaining -= qty;
@@ -92,15 +104,24 @@ public class OrderBook {
       Deque<Order> q = oppLevel.getValue();
       if (q.isEmpty()) { removeEmptyLevel(taker.side == Side.BUY ? asks : bids, oppLevel.getKey()); continue; }
       Order maker = q.peekFirst();
-      long makerAvail = maker.type == OrderType.ICEBERG ? maker.visibleRemaining : maker.remaining;
-      if (makerAvail <= 0) { q.pollFirst(); maybeRefillIceberg(maker); continue; }
+      long makerAvail = maker.type == OrderType.ICEBERG ? (maker.visibleRemaining == null ? 0 : maker.visibleRemaining) : maker.remaining;
+      if (makerAvail <= 0) {
+        if (maker.type == OrderType.ICEBERG) {
+          maybeRefillIceberg(maker);
+          makerAvail = maker.visibleRemaining == null ? 0 : maker.visibleRemaining;
+          if (makerAvail <= 0) { q.pollFirst(); continue; }
+        } else {
+          q.pollFirst();
+          continue;
+        }
+      }
       long qty = Math.min(taker.remaining, makerAvail);
       long price = oppPrice;
       
       // 计算费用
-      Fill tempFill = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, null);
+      Fill tempFill = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, null, taker.accountId, maker.accountId);
       var fees = feeCalculator.calculateFees(tempFill, taker, maker);
-      Fill f = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, fees);
+      Fill f = new Fill(genTradeId(now), taker.orderId, maker.orderId, price, qty, now, taker.side, fees, taker.accountId, maker.accountId);
       fills.add(f);
 
       taker.remaining -= qty;

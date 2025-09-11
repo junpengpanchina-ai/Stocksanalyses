@@ -108,7 +108,7 @@ public class BacktestEngineTest {
     // 测试高频交易场景
     BacktestEngine engine = new BacktestEngine(config);
     
-    List<Order> orders = Arrays.asList();
+    List<Order> orders = new java.util.ArrayList<>();
     long baseTime = System.currentTimeMillis();
     
     // 生成100个高频订单

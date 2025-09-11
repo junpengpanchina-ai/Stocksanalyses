@@ -2,6 +2,7 @@ package com.stocksanalyses.controller;
 
 import com.stocksanalyses.privacy.PrivacyConfig;
 import com.stocksanalyses.privacy.PrivacyService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,6 +11,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/privacy")
+@ConditionalOnProperty(value = "privacy.enabled", havingValue = "true", matchIfMissing = false)
 public class PrivacyController {
 
     private final PrivacyService privacyService;

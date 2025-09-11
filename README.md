@@ -177,6 +177,30 @@ kubectl logs -f job/k6-benchmark
 
 ## 📚 API文档
 
+### OpenAPI / Swagger-UI
+
+启动后可直接访问：
+
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- OpenAPI YAML: `http://localhost:8080/v3/api-docs.yaml`
+
+分组（若启用）：`/v3/api-docs/{group}`
+
+主要端点（已对齐前端字段）：
+
+- 存储管理
+  - `POST /api/storage/quotes/{market}/{symbol}` 上传K线（仅CSV，支持保存为Parquet）
+  - `GET /api/storage/quotes/{market}/{symbol}` 读取本地K线（优先Parquet）
+  - `GET /api/storage/quotes` 列出已有市场/代码
+  - `POST /api/storage/migrate/{market}` 批量迁移 CSV→Parquet（并发可配）
+- 安全与限流
+  - `GET /api/security/rate-limit/{key}` 查看配额窗口
+  - `GET /api/security/timeout/{operation}` / `POST` 设置超时/重试
+  - `POST/GET/DELETE /api/security/api-key` 管理加密存储的 API Key
+
+若端口/上下文不同，请据实际调整 URL。
+
 ### 核心端点
 ```http
 # 获取K线数据
@@ -220,6 +244,42 @@ Content-Type: multipart/form-data
 - `503` - 服务不可用
 
 ## 🗄️ 数据源配置
+
+### 本地数据布局与导入规范
+
+目录结构（本地存储）：
+```
+data/
+  quotes/
+    cn|hk|us/
+      {symbol}.parquet | {symbol}.csv  # 优先读取 Parquet，其次 CSV
+  news/
+    YYYY-MM-DD/
+      {id}.json                        # 聚合/导入的资讯
+  ai/
+    sentiment|finance|screener/
+      {id}.json                        # AI分析结果
+  alerts/
+    history.jsonl                      # 报警历史（JSON Lines）
+    rules.yml                          # 报警规则
+```
+
+CSV 列规范（最少列）：
+```
+timestamp,open,high,low,close,volume[,amount,count]
+```
+时间戳单位推荐：毫秒（ms）。若为 ISO 字符串也可，但需前后端一致。
+
+导入/读取 API（统一契约）：
+- 上传CSV并可写Parquet：
+  - `POST /api/storage/quotes/{market}/{symbol}` (multipart: file, useParquet=true|false)
+  - 返回：`{ success, message, format }`
+- 读取本地行情（统一返回包）：
+  - `GET /api/quotes/{market}/{symbol}?preferParquet=true|false`
+  - 返回：`{ success, data: CandleData[], count }`
+
+兼容旧接口：
+- `GET /api/quotes/local?symbol=...&market=...` 返回数组（仅CSV），建议迁移到上面统一接口。
 
 ### TimescaleDB
 ```sql

@@ -1,31 +1,65 @@
-server:
-  port: 8080
-logging:
-  level:
-    root: INFO
+# 生产环境配置
 spring:
-  jackson:
-    serialization:
-      WRITE_DATES_AS_TIMESTAMPS: false
-  servlet:
-    multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+  profiles:
+    active: prod
+
+# AI配置 - 生产环境
+ai:
+  provider: ${AI_PROVIDER:openai}
+  model: ${AI_MODEL:gpt-4}
+  endpoint: ${AI_ENDPOINT:https://api.openai.com/v1/chat/completions}
+  apiKey: ${AI_API_KEY:}
+  maxTokens: ${AI_MAX_TOKENS:2048}
+  temperature: ${AI_TEMPERATURE:0.2}
+  timeoutMs: ${AI_TIMEOUT_MS:60000}
+
+# 数据源配置 - 生产环境
+data:
+  quotes:
+    path: ${QUOTES_PATH:/app/data/quotes}
+    markets: ${QUOTES_MARKETS:CN,HK,US}
+  news:
+    path: ${NEWS_PATH:/app/data/news}
+    maxFiles: ${NEWS_MAX_FILES:10000}
+  ai:
+    path: ${AI_DATA_PATH:/app/data/ai}
+    maxCacheSize: ${AI_CACHE_SIZE:1000}
+
+# 安全配置
+security:
+  encryption:
+    enabled: ${ENCRYPTION_ENABLED:true}
+    keyRotationDays: ${KEY_ROTATION_DAYS:7}
+  rateLimit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    defaultMaxRequests: ${RATE_LIMIT_MAX:50}
+    windowSizeMs: ${RATE_LIMIT_WINDOW:60000}
+  timeout:
+    enabled: ${TIMEOUT_ENABLED:true}
+    defaultTimeoutMs: ${TIMEOUT_MS:30000}
+
+# 监控配置
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,metrics,prometheus
   endpoint:
     health:
-      enabled: true
-      probes:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
         enabled: true
-      show-details: when_authorized
-  tracing:
-    sampling:
-      probability: 0.2
-  otlp:
-    tracing:
-      endpoint: http://otel-collector:4318/v1/traces
 
+# 日志配置
+logging:
+  level:
+    com.stocksanalyses: INFO
+    org.springframework.security: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /app/logs/application.log
+    max-size: 100MB
+    max-history: 30

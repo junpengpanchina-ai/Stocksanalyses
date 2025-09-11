@@ -1,0 +1,47 @@
+# 开发环境配置
+spring:
+  profiles:
+    active: dev
+
+# AI配置 - 开发环境
+ai:
+  provider: ollama
+  model: qwen2.5:14b-instruct
+  endpoint: http://localhost:11434/v1/chat/completions
+  apiKey: ${AI_API_KEY:}
+  maxTokens: 1024
+  temperature: 0.3
+  timeoutMs: 30000
+
+# 数据源配置 - 开发环境
+data:
+  quotes:
+    path: data/quotes
+    markets: [CN, HK, US]
+  news:
+    path: data/news
+    maxFiles: 1000
+  ai:
+    path: data/ai
+    maxCacheSize: 100
+
+# 安全配置
+security:
+  encryption:
+    enabled: true
+    keyRotationDays: 30
+  rateLimit:
+    enabled: true
+    defaultMaxRequests: 100
+    windowSizeMs: 60000
+  timeout:
+    enabled: true
+    defaultTimeoutMs: 30000
+
+# 日志配置
+logging:
+  level:
+    com.stocksanalyses: DEBUG
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

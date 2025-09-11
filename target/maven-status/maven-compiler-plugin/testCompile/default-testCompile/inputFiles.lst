@@ -1,9 +1,11 @@
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/MatchingEngineComprehensiveTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/controller/UploadControllerTest.java
+/Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/config/HealthProbeTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/EnhancedBacktestTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/StrategyEngineTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/SimplifiedBacktestTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/MatchingEngineBasicTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/PatternDetectorsTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/CorporateActionTest.java
+/Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/MetricsServiceTest.java
 /Users/p/Documents/GitHub/Stocksanalyses/src/test/java/com/stocksanalyses/service/BacktestEngineTest.java

@@ -1,0 +1,13 @@
+- id: demo_price_jump
+  kind: price
+  market: US
+  symbol: TSLA
+  thresholdPct: 5
+
+- id: demo_rsi_oversold
+  kind: indicator
+  market: HK
+  symbol: 0700
+  expr: "RSI(14) < 30"
+
+

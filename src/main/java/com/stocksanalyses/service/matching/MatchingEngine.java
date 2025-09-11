@@ -118,7 +118,13 @@ public class MatchingEngine {
         if (o.remaining == 0) o.state = OrderState.FILLED; else { o.state = OrderState.REJECTED; }
         break;
       default:
-        if (o.remaining > 0) book.enqueuePassive(o); else o.state = OrderState.FILLED;
+        if (o.remaining > 0) {
+          // MARKET 单不入簿，剩余数量直接撤销
+          if (o.type == OrderType.MARKET) { o.state = OrderState.CANCELLED; o.remaining = 0; }
+          else { book.enqueuePassive(o); }
+        } else {
+          o.state = OrderState.FILLED;
+        }
     }
   }
 
@@ -161,15 +167,19 @@ public class MatchingEngine {
 
   private void updatePositionsFromFills(List<Fill> fills) {
     for (Fill fill : fills) {
-      if (fill.takerOrderId != null) {
-        // 更新taker持仓
-        riskManager.updatePosition(fill.takerOrderId, instrument, fill);
+      if (fill.takerAccountId != null) {
+        riskManager.updatePosition(fill.takerAccountId, instrument, fill);
       }
-      if (fill.makerOrderId != null) {
-        // 更新maker持仓
-        riskManager.updatePosition(fill.makerOrderId, instrument, fill);
+      if (fill.makerAccountId != null) {
+        riskManager.updatePosition(fill.makerAccountId, instrument, fill);
       }
     }
+  }
+
+  // 简化：测试用，在真实实现中应有订单存储/查找
+  private Order findOrderById(String orderId) {
+    // 无持久层，这里返回 null，测试中应提供 accountId 避免断言空
+    return null;
   }
 
   private boolean canFullyFill(Order o) {
