@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["maven"]
+
+[phases.install]
+cmds = ["mvn clean package -DskipTests"]
+
+[phases.build]
+cmds = ["echo 'Build completed'"]
+
+[start]
+cmd = "java -Xms256m -Xmx512m -Dspring.profiles.active=prod -jar target/kline-analytics-0.0.1-SNAPSHOT.jar"
